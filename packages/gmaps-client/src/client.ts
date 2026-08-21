@@ -68,9 +68,15 @@ function parsePersonEntry(entry: unknown): SharedLocation | null {
  * endpoint using exported session cookies.
  *
  * @param cookieHeader full Cookie header, e.g. "__Secure-1PSID=...; SID=..."
+ * @param opts.authuser index of the Google account to query when multiple
+ *        accounts share one browser cookie jar (0 = default/first account)
  */
-export async function fetchLocations(cookieHeader: string): Promise<LocationsSnapshot> {
-  const url = `${READ_URL}?authuser=0&hl=en&gl=us&pb=${encodeURIComponent(PB)}`;
+export async function fetchLocations(
+  cookieHeader: string,
+  opts?: { authuser?: number },
+): Promise<LocationsSnapshot> {
+  const authuser = opts?.authuser ?? 0;
+  const url = `${READ_URL}?authuser=${authuser}&hl=en&gl=us&pb=${encodeURIComponent(PB)}`;
 
   let res: Response;
   try {

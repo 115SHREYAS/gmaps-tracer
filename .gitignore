@@ -30,3 +30,6 @@ Thumbs.db
 
 # --- private planning notes ---
 session-*.md
+
+# --- local-only docs / explainers ---
+local-explainers/

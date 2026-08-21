@@ -48,7 +48,8 @@ export async function runSyncOnce(): Promise<{ ok: boolean; inserted: number }> 
     }
 
     const cookieHeader = loadCookieHeader(state.cookiesEncrypted);
-    const snapshot = await fetchLocations(cookieHeader);
+    const authuser = Number.parseInt(process.env.GOOGLE_AUTHUSER ?? "0", 10) || 0;
+    const snapshot = await fetchLocations(cookieHeader, { authuser });
 
     let inserted = 0;
     for (const person of snapshot.people) {

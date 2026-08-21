@@ -146,6 +146,7 @@ gunzip -c backups/gpstracer-2026-08-21.sql.gz | \
 | `APP_PASSWORD` | Single login password for the web UI |
 | `SESSION_SECRET` | ≥32 chars; signs the session cookie + encrypts stored cookies |
 | `POLL_INTERVAL_SECONDS` | Worker poll interval (default 300) |
+| `GOOGLE_AUTHUSER` | Account index to query when multiple Google accounts share one browser (default 0) |
 | `TZ_OFFSET` | Offset used for date filters (default `+05:30`) |
 | `GOOGLE_EMAIL` | Optional: also track the authenticated account itself |
 | `NEXT_PUBLIC_MAP_STYLE` | `pmtiles` (default) or `osm` fallback (build-time) |

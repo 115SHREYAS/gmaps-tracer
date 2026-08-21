@@ -47,6 +47,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-gps}:${POSTGRES_PASSWORD:-gps}@db:5432/${POSTGRES_DB:-gpstracer}
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-300}
+      GOOGLE_AUTHUSER: ${GOOGLE_AUTHUSER:-0}
     depends_on:
       db:
         condition: service_healthy
