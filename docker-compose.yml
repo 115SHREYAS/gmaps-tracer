@@ -1,0 +1,94 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gps}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gps}
+      POSTGRES_DB: ${POSTGRES_DB:-gpstracer}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gps} -d ${POSTGRES_DB:-gpstracer}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+      args:
+        NEXT_PUBLIC_MAP_STYLE: ${NEXT_PUBLIC_MAP_STYLE:-pmtiles}
+        NEXT_PUBLIC_MAP_CENTER_LAT: ${NEXT_PUBLIC_MAP_CENTER_LAT:-12.9716}
+        NEXT_PUBLIC_MAP_CENTER_LNG: ${NEXT_PUBLIC_MAP_CENTER_LNG:-77.5946}
+        NEXT_PUBLIC_MAP_ZOOM: ${NEXT_PUBLIC_MAP_ZOOM:-11}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-gps}:${POSTGRES_PASSWORD:-gps}@db:5432/${POSTGRES_DB:-gpstracer}
+      APP_PASSWORD: ${APP_PASSWORD:?set APP_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      TZ_OFFSET: ${TZ_OFFSET:-+05:30}
+      TILES_PATH: /tiles
+    volumes:
+      - ./tiles:/tiles:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-gps}:${POSTGRES_PASSWORD:-gps}@db:5432/${POSTGRES_DB:-gpstracer}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-300}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-gps}
+    volumes:
+      - ./backups:/backups
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while :; do
+          now=$$(date +%s); target=$$(date -d "03:00" +%s)
+          if [ $$target -lt $$now ]; then target=$$(date -d "tomorrow 03:00" +%s); fi
+          sleep $$((target-now))
+          pg_dump -h db -U ${POSTGRES_USER:-gps} ${POSTGRES_DB:-gpstracer} | gzip > /backups/gpstracer-$$(date +%F).sql.gz
+          find /backups -name "*.sql.gz" -mtime +14 -delete
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

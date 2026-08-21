@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  color-scheme: dark;
+}
+
+.maplibregl-popup-content {
+  background: #1c1c1f;
+  color: #f5f5f5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.maplibregl-popup-close-button {
+  color: #a3a3a3;
+  padding: 2px 7px;
+  font-size: 14px;
+}
+
+.maplibregl-popup-close-button:hover {
+  background: transparent;
+  color: #fff;
+}
+
+.maplibregl-ctrl-group {
+  background: #1c1c1f !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid #333 !important;
+}
+
+.maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(0.9);
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgba(28, 28, 31, 0.8) !important;
+  color: #a3a3a3 !important;
+  font-size: 10px;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: #a3a3a3 !important;
+}

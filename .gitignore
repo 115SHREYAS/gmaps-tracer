@@ -1,0 +1,32 @@
+# --- dependencies / builds ---
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# --- secrets: environment files (example stays tracked) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- secrets: Google session cookies in any form ---
+# (cookies.txt exports, header strings, HAR captures all grant account access)
+*cookies*.txt
+cookies.txt
+*.cookies
+*.har
+
+# --- local data (tiles are 100MB+, backups contain full location history) ---
+tiles/*.pmtiles
+backups/
+
+# --- logs / OS junk ---
+*.log
+.DS_Store
+Thumbs.db
+
+# --- private planning notes ---
+session-*.md

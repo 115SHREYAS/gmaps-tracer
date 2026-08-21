@@ -1,0 +1,23 @@
+{
+  "name": "@app/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/run-with-env.mjs tsx watch src/index.ts",
+    "start": "node ../../scripts/run-with-env.mjs tsx src/index.ts",
+    "sync-once": "node ../../scripts/run-with-env.mjs tsx src/run-once.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@app/db": "workspace:*",
+    "@app/gmaps-client": "workspace:*",
+    "drizzle-orm": ">=0.36",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
