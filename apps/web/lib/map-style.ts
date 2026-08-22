@@ -1,20 +1,24 @@
-import { layers, LIGHT } from "@protomaps/basemaps";
+import { layers, namedFlavor } from "@protomaps/basemaps";
 import type { StyleSpecification } from "maplibre-gl";
 
 export const PMTILES_URL = "/tiles/bangalore.pmtiles";
 
 export function protomapsStyle(): StyleSpecification {
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
   return {
     version: 8,
-    glyphs: "https://protomaps.github.io/fonts/v2/{fontstack}/{range}.pbf",
+    glyphs: `${origin}/fonts/{fontstack}/{range}.pbf`,
+    sprite: `${origin}/sprites/v4/light`,
     sources: {
       protomaps: {
         type: "vector",
-        url: `pmtiles://${PMTILES_URL}`,
+        url: `pmtiles://${origin}${PMTILES_URL}`,
         attribution: "© OpenStreetMap contributors © Protomaps",
       },
     },
-    layers: layers("protomaps", LIGHT) as unknown as StyleSpecification["layers"],
+    layers: layers("protomaps", namedFlavor("light"), {
+      lang: "en",
+    }) as unknown as StyleSpecification["layers"],
   };
 }
 
@@ -34,7 +38,14 @@ export function osmRasterStyle(): StyleSpecification {
   };
 }
 
-export async function resolveStyle(): Promise<{ style: StyleSpecification; offline: boolean }> {
+export interface StyleAndOffline {
+  style: StyleSpecification;
+  offline: boolean;
+  /** Set once MapView has rebuilt itself on the OSM raster fallback. */
+  fellBack?: boolean;
+}
+
+export async function resolveStyle(): Promise<StyleAndOffline> {
   if (process.env.NEXT_PUBLIC_MAP_STYLE !== "osm") {
     try {
       const res = await fetch(PMTILES_URL, { method: "HEAD", cache: "no-store" });

@@ -379,7 +379,7 @@ export function HistoryView() {
 
       <div className="relative min-h-0 flex-1">
         <MapView
-          className="absolute inset-0"
+          className="h-full w-full"
           onReady={(m) => {
             setupLayers(m);
             setMap(m);

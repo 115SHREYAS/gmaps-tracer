@@ -9,8 +9,18 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
 };
 
-function resolveFile(parts: string[]): { filePath: string } | { error: Response } {
-  const root = path.resolve(process.env.TILES_PATH ?? "./tiles");
+async function resolveTilesRoot(): Promise<string> {
+  const raw = process.env.TILES_PATH ?? "./tiles";
+  const direct = path.resolve(raw);
+  try {
+    await stat(direct);
+    return direct;
+  } catch {}
+  return path.resolve(process.cwd(), "..", "..", raw);
+}
+
+async function resolveFile(parts: string[]): Promise<{ filePath: string } | { error: Response }> {
+  const root = await resolveTilesRoot();
   const rel = parts.map((p) => decodeURIComponent(p)).join("/");
   const filePath = path.resolve(root, rel);
   if (filePath !== root && !filePath.startsWith(root + path.sep)) {
@@ -20,7 +30,7 @@ function resolveFile(parts: string[]): { filePath: string } | { error: Response 
 }
 
 async function handle(req: Request, parts: string[]): Promise<Response> {
-  const resolved = resolveFile(parts);
+  const resolved = await resolveFile(parts);
   if ("error" in resolved) return resolved.error;
   const { filePath } = resolved;
 

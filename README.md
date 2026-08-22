@@ -95,10 +95,20 @@ scripts/build-tiles.sh              # today's build, bbox ~Bangalore + 5km
 BBOX=77.25,12.75,77.95,13.35 scripts/build-tiles.sh 2026-08-20
 ```
 
-Requires only `npx pmtiles` (auto-installed). Result: `tiles/bangalore.pmtiles`
-(~50–100 MB). In production it is mounted into the web container and served at
-`/tiles/bangalore.pmtiles` with Range support. Label fonts load from Protomaps' public
-font CDN; everything else stays local.
+Requires only `curl`/`unzip` (the script fetches the go-pmtiles CLI automatically).
+Result: `tiles/bangalore.pmtiles` (~40–100 MB). In production it is mounted into the web
+container and served at `/tiles/bangalore.pmtiles` with Range support.
+
+Label fonts and sprites are self-hosted under `apps/web/public/fonts` and
+`apps/web/public/sprites` (downloaded from protomaps/basemaps-assets), so the basemap
+renders fully offline with no external requests. Re-fetch/refresh them with:
+
+```bash
+scripts/fetch-basemap-assets.sh        # fonts + sprites/v4 into apps/web/public
+```
+
+Font directory names must match the `text-font` stacks emitted by `@protomaps/basemaps`
+exactly (including `Noto Sans Devanagari Regular v1`), otherwise labels 404.
 
 Set `NEXT_PUBLIC_MAP_STYLE=osm` to skip PMTiles entirely.
 

@@ -42,7 +42,9 @@ export function LiveDashboard() {
   const [entries, setEntries] = useState<LiveEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [offlineTiles, setOfflineTiles] = useState(true);
-  const mapRef = useRef<MlMap | null>(null);
+  // State (not just a ref) so the marker effect reruns once the map is ready,
+  // even if /api/live resolved first.
+  const [map, setMap] = useState<MlMap | null>(null);
   const markersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
   const fittedRef = useRef(false);
 
@@ -65,7 +67,6 @@ export function LiveDashboard() {
   }, [fetchLive]);
 
   useEffect(() => {
-    const map = mapRef.current;
     if (!map) return;
 
     const seen = new Set<string>();
@@ -109,7 +110,7 @@ export function LiveDashboard() {
       for (const e of entries) bounds.extend([e.lng, e.lat]);
       map.fitBounds(bounds, { padding: 80, maxZoom: 15, duration: 0 });
     }
-  }, [entries]);
+  }, [entries, map]);
 
   const now = Date.now();
 
@@ -162,10 +163,8 @@ export function LiveDashboard() {
 
       <div className="relative min-h-[50vh] flex-1">
         <MapView
-          className="absolute inset-0"
-          onReady={(map) => {
-            mapRef.current = map;
-          }}
+          className="h-full w-full"
+          onReady={(m) => setMap(m)}
           onFallback={() => setOfflineTiles(false)}
         />
         {!offlineTiles && loaded && (
