@@ -20,17 +20,16 @@ export const TZ_OFFSET = "+05:30";
 export const TIME_ZONE_LABEL = "Asia/Kolkata";
 export const STALE_AFTER_MS = 15 * 60 * 1000;
 
+// Curated for separation on the dark basemap and kept clear of the UI's
+// signal-amber accent (#ffae3c), which must read unambiguously as "interactive".
 export const PERSON_COLORS = [
-  "#38bdf8",
-  "#f472b6",
-  "#4ade80",
-  "#fb923c",
-  "#a78bfa",
-  "#facc15",
-  "#2dd4bf",
-  "#f87171",
-  "#c084fc",
-  "#84cc16",
+  "#4cc2fa", // azure
+  "#f26db8", // magenta
+  "#41d48f", // mint
+  "#8fa5ff", // periwinkle
+  "#a78bfa", // violet
+  "#2fd6c3", // teal
+  "#fb6e6e", // coral
 ];
 
 export function colorFor(id: string): string {

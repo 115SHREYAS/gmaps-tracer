@@ -8,7 +8,7 @@ export function protomapsStyle(): StyleSpecification {
   return {
     version: 8,
     glyphs: `${origin}/fonts/{fontstack}/{range}.pbf`,
-    sprite: `${origin}/sprites/v4/light`,
+    sprite: `${origin}/sprites/v4/dark`,
     sources: {
       protomaps: {
         type: "vector",
@@ -16,7 +16,7 @@ export function protomapsStyle(): StyleSpecification {
         attribution: "© OpenStreetMap contributors © Protomaps",
       },
     },
-    layers: layers("protomaps", namedFlavor("light"), {
+    layers: layers("protomaps", namedFlavor("dark"), {
       lang: "en",
     }) as unknown as StyleSpecification["layers"],
   };

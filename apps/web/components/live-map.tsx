@@ -30,12 +30,43 @@ function popupHtml(e: LiveEntry): string {
   return [
     `<strong>${escapeHtml(e.name)}</strong>`,
     e.address ? escapeHtml(e.address) : "",
-    `${formatRelative(new Date(e.recordedAt).getTime())}`,
-    battery,
-    e.accuracyM != null ? `accuracy ±${Math.round(e.accuracyM)}m` : "",
+    `<span style="font-family:'IBM Plex Mono',monospace;color:#8b96ac">${formatRelative(new Date(e.recordedAt).getTime())}</span>`,
+    battery ? `<span style="color:#8b96ac">${battery}</span>` : "",
+    e.accuracyM != null
+      ? `<span style="color:#8b96ac">accuracy ±${Math.round(e.accuracyM)}m</span>`
+      : "",
   ]
     .filter(Boolean)
     .join("<br/>");
+}
+
+function Avatar({ entry, size }: { entry: LiveEntry; size: string }) {
+  const color = colorFor(entry.id);
+  if (entry.photoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={entry.photoUrl}
+        alt=""
+        referrerPolicy="no-referrer"
+        className={`${size} shrink-0 rounded-full object-cover`}
+        style={{ boxShadow: `0 0 0 2px #0f1420, 0 0 0 3.5px ${color}` }}
+      />
+    );
+  }
+  const initial = entry.name.trim().charAt(0).toUpperCase() || "?";
+  return (
+    <span
+      className={`${size} flex shrink-0 items-center justify-center rounded-full font-display text-xs font-semibold`}
+      style={{
+        backgroundColor: `${color}26`,
+        color,
+        boxShadow: `0 0 0 2px #0f1420, 0 0 0 3.5px ${color}`,
+      }}
+    >
+      {initial}
+    </span>
+  );
 }
 
 export function LiveDashboard() {
@@ -75,16 +106,31 @@ export function LiveDashboard() {
       let marker = markersRef.current.get(e.id);
       if (!marker) {
         const el = document.createElement("div");
-        el.className = "flex cursor-pointer items-center gap-1";
+        el.className = "relative flex cursor-pointer items-center gap-1.5";
+
+        // Radar ping behind the dot — fresh fixes only.
+        const dotWrap = document.createElement("span");
+        dotWrap.className = "relative flex h-4 w-4 items-center justify-center";
+        dotWrap.style.color = colorFor(e.id);
         const dot = document.createElement("span");
-        dot.className = "h-3.5 w-3.5 rounded-full border-2 border-white shadow";
+        dot.className = "h-3 w-3 rounded-full border-2 shadow-md";
         dot.style.backgroundColor = colorFor(e.id);
+        dot.style.borderColor = "rgba(231,236,246,0.92)";
+        if (Date.now() - new Date(e.recordedAt).getTime() <= STALE_AFTER_MS) {
+          const ping = document.createElement("span");
+          ping.className = "fix-ping";
+          dotWrap.appendChild(ping);
+        }
+        dotWrap.appendChild(dot);
+
         const label = document.createElement("span");
         label.className =
-          "rounded bg-neutral-900/85 px-1.5 py-0.5 text-[11px] font-medium text-white";
+          "rounded border border-[#212a3c] bg-[#0f1420]/90 px-1.5 py-0.5 text-[11px] font-medium text-[#e7ecf6] backdrop-blur-sm";
         label.textContent = e.name;
-        el.appendChild(dot);
+
+        el.appendChild(dotWrap);
         el.appendChild(label);
+
         marker = new maplibregl.Marker({ element: el, anchor: "left" })
           .setLngLat([e.lng, e.lat])
           .setPopup(new maplibregl.Popup({ offset: 14 }).setHTML(popupHtml(e)))
@@ -94,7 +140,9 @@ export function LiveDashboard() {
         marker.setLngLat([e.lng, e.lat]);
         const el = marker.getElement();
         const label = el.querySelector("span:last-child") as HTMLElement | null;
-        if (label) label.textContent = e.name;
+        if (label && label.textContent !== e.name) label.textContent = e.name;
+        const popup = marker.getPopup();
+        if (popup?.isOpen()) popup.setHTML(popupHtml(e));
       }
     }
     for (const [id, marker] of markersRef.current) {
@@ -115,45 +163,57 @@ export function LiveDashboard() {
   const now = Date.now();
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col lg:flex-row">
-      <aside className="w-full shrink-0 overflow-y-auto border-b border-neutral-800 bg-neutral-900 p-4 lg:h-full lg:w-80 lg:border-b-0 lg:border-r">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Live positions</h2>
-          <span className="text-xs text-neutral-500">auto-refresh 30s</span>
+    <div className="flex h-full flex-col-reverse lg:flex-row">
+      {/* Position rail — horizontal card strip on mobile, sidebar on desktop */}
+      <aside className="shrink-0 border-line bg-surface max-lg:border-t lg:h-full lg:w-80 lg:overflow-y-auto lg:border-r lg:border-t-0 scroll-slim">
+        <div className="flex items-baseline justify-between px-4 pt-3">
+          <h2 className="eyebrow">Live positions · {entries.length}</h2>
+          <span className="font-mono text-[10px] text-faint">REFRESH 30S</span>
         </div>
-        {!loaded && <p className="text-sm text-neutral-500">Loading...</p>}
-        {loaded && entries.length === 0 && (
-          <p className="text-sm text-neutral-500">
-            No data yet. Upload cookies in Settings and wait for the first poll.
-          </p>
+
+        {!loaded && (
+          <p className="px-4 py-3 font-mono text-xs text-muted">Loading…</p>
         )}
-        <ul className="space-y-2">
+        {loaded && entries.length === 0 && (
+          <div className="mx-4 mb-4 mt-3 rounded-lg border border-dashed border-line p-3">
+            <p className="text-xs leading-relaxed text-muted">
+              No fixes yet. Upload your Google cookies.txt in Settings and wait
+              for the first poll.
+            </p>
+          </div>
+        )}
+
+        <ul className="flex gap-2.5 p-3 pt-2.5 scroll-slim max-lg:snap-x max-lg:overflow-x-auto lg:flex-col lg:gap-2">
           {entries.map((e) => {
             const stale = now - new Date(e.recordedAt).getTime() > STALE_AFTER_MS;
             return (
               <li
                 key={e.id}
-                className="rounded-lg border border-neutral-800 bg-neutral-950 p-3"
+                className="w-56 shrink-0 rounded-lg border border-line bg-raised p-3 transition-colors hover:border-faint/50 max-lg:snap-start lg:w-auto"
               >
-                <div className="flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: colorFor(e.id) }}
-                  />
-                  <span className="truncate text-sm font-medium">{e.name}</span>
-                  {stale && (
-                    <span className="ml-auto rounded bg-amber-900/60 px-1.5 py-0.5 text-[10px] font-medium text-amber-200">
-                      stale
-                    </span>
-                  )}
+                <div className="flex items-center gap-2.5">
+                  <Avatar entry={e} size="h-8 w-8" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium">{e.name}</span>
+                      {stale && (
+                        <span className="ml-auto shrink-0 rounded border border-accent/40 px-1 py-px font-mono text-[9px] uppercase tracking-wider text-accent">
+                          stale
+                        </span>
+                      )}
+                    </div>
+                    <p className="truncate font-mono text-[11px] text-muted">
+                      {formatRelative(new Date(e.recordedAt).getTime())}
+                    </p>
+                  </div>
                 </div>
-                <p className="mt-1 line-clamp-2 text-xs text-neutral-400">
+                <p className="mt-2 line-clamp-2 min-h-8 text-xs leading-snug text-muted">
                   {e.address ?? "unknown address"}
                 </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  {formatRelative(new Date(e.recordedAt).getTime())}
-                  {e.batteryPct != null && ` · ${e.batteryPct}%${e.charging ? " charging" : ""}`}
-                  {e.accuracyM != null && ` · ±${Math.round(e.accuracyM)}m`}
+                <p className="mt-1.5 font-mono text-[10px] text-faint">
+                  {e.batteryPct != null && `${e.batteryPct}%${e.charging ? " ⚡" : ""}`}
+                  {e.batteryPct != null && e.accuracyM != null && " · "}
+                  {e.accuracyM != null && `±${Math.round(e.accuracyM)}m`}
                 </p>
               </li>
             );
@@ -161,16 +221,16 @@ export function LiveDashboard() {
         </ul>
       </aside>
 
-      <div className="relative min-h-[50vh] flex-1">
+      <div className="relative min-h-0 flex-1">
         <MapView
           className="h-full w-full"
           onReady={(m) => setMap(m)}
           onFallback={() => setOfflineTiles(false)}
         />
         {!offlineTiles && loaded && (
-          <div className="absolute bottom-2 left-2 rounded-md bg-amber-950/90 px-3 py-1.5 text-xs text-amber-200">
-            Offline basemap missing — using online OSM tiles. Run scripts/build-tiles.sh to enable
-            offline mode.
+          <div className="hud-chip absolute bottom-2 left-2 z-10 max-w-[calc(100%-1rem)] px-3 py-1.5 font-mono text-[11px] text-accent">
+            Offline basemap missing — using online OSM tiles. Run
+            scripts/build-tiles.sh to enable offline mode.
           </div>
         )}
       </div>

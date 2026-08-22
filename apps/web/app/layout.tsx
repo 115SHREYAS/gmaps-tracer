@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Nav } from "@/components/nav";
@@ -9,13 +9,20 @@ export const metadata: Metadata = {
   description: "Self-hosted Google Maps location sharing history tracker",
 };
 
+export const viewport: Viewport = {
+  themeColor: "#0a0e16",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-neutral-950 text-neutral-100 antialiased">
+      <body className="flex h-dvh flex-col overflow-hidden bg-bg text-ink antialiased">
         <Nav />
         <SessionBanner />
-        {children}
+        <main className="min-h-0 flex-1">{children}</main>
       </body>
     </html>
   );

@@ -9,7 +9,6 @@ import {
   detectStops,
   escapeHtml,
   formatClock,
-  formatDateTime,
   formatDuration,
   haversineMeters,
   interpolateAt,
@@ -194,7 +193,7 @@ export function HistoryView() {
         paint: {
           "line-color": ["get", "color"],
           "line-width": 3,
-          "line-opacity": 0.45,
+          "line-opacity": 0.4,
         },
       });
     }
@@ -222,7 +221,7 @@ export function HistoryView() {
           "circle-color": ["get", "color"],
           "circle-radius": 3.5,
           "circle-stroke-width": 1,
-          "circle-stroke-color": "#ffffff",
+          "circle-stroke-color": "#0a0e16",
           "circle-opacity": 0.9,
         },
       });
@@ -235,7 +234,7 @@ export function HistoryView() {
     const src = map.getSource("paths") as maplibregl.GeoJSONSource | undefined;
     src?.setData(pathFeatures(tracks));
     const pts = map.getSource("points") as maplibregl.GeoJSONSource | undefined;
-    pts?.setData(pointFeatures(tracks));
+    pts?.setData(showPoints ? pointFeatures(tracks) : EMPTY_FC);
 
     for (const m of stopMarkersRef.current) m.remove();
     stopMarkersRef.current = [];
@@ -244,7 +243,7 @@ export function HistoryView() {
       for (const s of t.stops) {
         const el = document.createElement("div");
         el.className =
-          "flex h-5 w-5 items-center justify-center rounded-full border-2 bg-white text-[10px] font-bold text-neutral-900 shadow";
+          "flex h-5 w-5 items-center justify-center rounded-full border-2 bg-[#e7ecf6] font-mono text-[10px] font-medium text-[#0a0e16] shadow";
         el.style.borderColor = t.color;
         el.textContent = String(s.index);
         const marker = new maplibregl.Marker({ element: el })
@@ -252,7 +251,7 @@ export function HistoryView() {
           .setPopup(
             new maplibregl.Popup({ offset: 12 }).setHTML(
               `<strong>Stop ${s.index}</strong><br/>${escapeHtml(t.name)}<br/>` +
-                `${formatClock(s.start)} – ${formatClock(s.end)} (${formatDuration(s.end - s.start)})`,
+                `<span style="font-family:'IBM Plex Mono',monospace;color:#8b96ac">${formatClock(s.start)} – ${formatClock(s.end)} (${formatDuration(s.end - s.start)})</span>`,
             ),
           )
           .addTo(map);
@@ -273,6 +272,14 @@ export function HistoryView() {
     }
   }, [map, tracks]);
 
+  // showPoints toggles without refetching — just repaint.
+  useEffect(() => {
+    if (!map) return;
+    const pts = map.getSource("points") as maplibregl.GeoJSONSource | undefined;
+    pts?.setData(showPoints ? pointFeatures(tracks) : EMPTY_FC);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPoints]);
+
   useEffect(() => {
     if (!map) return;
 
@@ -288,8 +295,16 @@ export function HistoryView() {
       const pos = interpolateAt(t.points, cursorMs);
       if (!pos) continue;
       const el = document.createElement("div");
-      el.className = "h-4 w-4 rounded-full border-2 border-white shadow-lg";
-      el.style.backgroundColor = t.color;
+      el.className = "relative flex h-4 w-4 items-center justify-center";
+      el.style.color = t.color;
+      const ping = document.createElement("span");
+      ping.className = "fix-ping";
+      const dot = document.createElement("span");
+      dot.className = "h-3.5 w-3.5 rounded-full border-2 shadow-lg";
+      dot.style.backgroundColor = t.color;
+      dot.style.borderColor = "rgba(231,236,246,0.92)";
+      el.appendChild(ping);
+      el.appendChild(dot);
       const marker = new maplibregl.Marker({ element: el })
         .setLngLat([pos.lng, pos.lat])
         .addTo(map);
@@ -328,31 +343,35 @@ export function HistoryView() {
     });
   }
 
-  const inputCls =
-    "rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm outline-none focus:border-sky-500";
+  const fieldCls =
+    "rounded-md border border-line bg-raised px-2 py-1.5 font-mono text-xs text-ink outline-none transition-colors focus:border-accent/70";
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-800 bg-neutral-900 px-4 py-2.5">
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-        <div className="flex items-center gap-1.5 text-sm text-neutral-400">
-          <span>from</span>
-          <input type="time" value={from} onChange={(e) => setFrom(e.target.value)} className={inputCls} />
-          <span>to</span>
-          <input type="time" value={to} onChange={(e) => setTo(e.target.value)} className={inputCls} />
+    <div className="flex h-full flex-col">
+      {/* Toolbar */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
+        <label className="flex items-center gap-2">
+          <span className="eyebrow">Day</span>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={fieldCls} />
+        </label>
+        <div className="flex items-center gap-2">
+          <span className="eyebrow">Window</span>
+          <input type="time" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldCls} />
+          <span className="font-mono text-xs text-faint">→</span>
+          <input type="time" value={to} onChange={(e) => setTo(e.target.value)} className={fieldCls} />
         </div>
-        <label className="flex items-center gap-1.5 text-sm text-neutral-400">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
           <input
             type="checkbox"
             checked={showPoints}
             onChange={(e) => setShowPoints(e.target.checked)}
-            className="accent-sky-500"
+            className="accent-accent"
           />
           raw points
         </label>
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className="ml-auto flex max-w-full items-center gap-1.5 scroll-slim max-lg:w-full max-lg:overflow-x-auto lg:overflow-visible lg:pb-0">
           {persons.length === 0 && (
-            <span className="text-xs text-neutral-500">no persons tracked yet</span>
+            <span className="font-mono text-[11px] text-faint">no persons tracked yet</span>
           )}
           {persons.map((p) => {
             const active = selected.has(p.id);
@@ -360,15 +379,15 @@ export function HistoryView() {
               <button
                 key={p.id}
                 onClick={() => togglePerson(p.id)}
-                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
                   active
-                    ? "border-neutral-600 bg-neutral-800 text-white"
-                    : "border-neutral-800 bg-transparent text-neutral-500 hover:text-neutral-300"
+                    ? "border-faint/60 bg-raised text-ink"
+                    : "border-line bg-transparent text-faint hover:text-muted"
                 }`}
               >
                 <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: active ? colorFor(p.id) : "#525252" }}
+                  className="h-2 w-2 rounded-full transition-opacity"
+                  style={{ backgroundColor: active ? colorFor(p.id) : "#5a6579" }}
                 />
                 {p.name}
               </button>
@@ -377,6 +396,7 @@ export function HistoryView() {
         </div>
       </div>
 
+      {/* Map */}
       <div className="relative min-h-0 flex-1">
         <MapView
           className="h-full w-full"
@@ -386,28 +406,25 @@ export function HistoryView() {
           }}
         />
 
-        {loading && (
-          <div className="absolute left-2 top-2 rounded-md bg-neutral-900/90 px-3 py-1.5 text-xs text-neutral-300">
-            Loading tracks...
-          </div>
-        )}
-        {error && (
-          <div className="absolute left-2 top-2 rounded-md bg-red-950/90 px-3 py-1.5 text-xs text-red-200">
-            {error}
-          </div>
-        )}
-
-        <div className="absolute right-2 top-2 max-w-[220px] space-y-1">
+        {/* Left telemetry stack */}
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[230px] flex-col items-start gap-1.5">
+          {loading && (
+            <div className="hud-chip pointer-events-auto px-3 py-1.5 font-mono text-[11px] text-muted">
+              Loading tracks…
+            </div>
+          )}
+          {error && (
+            <div className="hud-chip pointer-events-auto border-danger/40 px-3 py-1.5 font-mono text-[11px] text-danger">
+              {error}
+            </div>
+          )}
           {tracks.map((t) => (
-            <div
-              key={t.personId}
-              className="rounded-md bg-neutral-900/90 px-2.5 py-1.5 text-xs shadow"
-            >
-              <div className="flex items-center gap-1.5 font-medium">
+            <div key={t.personId} className="hud-chip pointer-events-auto px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-medium">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
                 {t.name}
               </div>
-              <div className="mt-0.5 text-neutral-400">
+              <div className="mt-0.5 font-mono text-[10px] text-muted">
                 {t.km.toFixed(1)} km · {t.points.length} pts · {t.stops.length} stops
               </div>
             </div>
@@ -415,25 +432,43 @@ export function HistoryView() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 border-t border-neutral-800 bg-neutral-900 px-4 py-2">
+      {/* Transport deck */}
+      <div className="flex shrink-0 items-center gap-2.5 border-t border-line bg-surface px-3 py-2 sm:gap-3 md:px-4">
         <button
           onClick={() => {
             if (cursorMs != null && cursorMs >= toMs) setCursorMs(fromMs);
             setPlaying((p) => !p);
           }}
           disabled={tracks.length === 0}
-          className="w-20 rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:opacity-40"
+          title={playing ? "Pause" : "Play"}
+          aria-label={playing ? "Pause" : "Play"}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-bg transition-[filter,opacity] hover:brightness-110 disabled:opacity-30"
         >
-          {playing ? "Pause" : "Play"}
+          {playing ? (
+            <svg viewBox="0 0 20 20" className="h-4 w-4" fill="currentColor">
+              <rect x="5" y="4" width="3.4" height="12" rx="1" />
+              <rect x="11.6" y="4" width="3.4" height="12" rx="1" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 20 20" className="h-4 w-4 translate-x-px" fill="currentColor">
+              <path d="M6 4.5v11a.7.7 0 0 0 1.07.6l8.6-5.5a.7.7 0 0 0 0-1.2l-8.6-5.5A.7.7 0 0 0 6 4.5Z" />
+            </svg>
+          )}
         </button>
         <button
           onClick={() => {
             setPlaying(false);
             setCursorMs(null);
           }}
-          className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm text-neutral-300 hover:text-white"
+          title="Reset playback"
+          aria-label="Reset playback"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted transition-colors hover:border-faint/60 hover:text-ink disabled:opacity-30"
+          disabled={tracks.length === 0}
         >
-          Reset
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-4 w-4">
+            <path d="M4 10a6 6 0 1 0 1.76-4.24" strokeLinecap="round" />
+            <path d="M4 3v3.2h3.2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
         <input
           type="range"
@@ -445,20 +480,22 @@ export function HistoryView() {
             setPlaying(false);
             setCursorMs(Number(e.target.value));
           }}
-          className="h-1.5 flex-1 accent-sky-500"
+          className="h-1.5 min-w-0 flex-1 accent-accent"
           disabled={tracks.length === 0}
+          aria-label="Timeline position"
         />
-        <span className="w-14 text-right text-sm tabular-nums text-neutral-300">
-          {cursorMs == null ? "--:--" : formatClock(cursorMs)}
+        <span className="w-12 shrink-0 text-right font-mono text-sm tabular-nums text-ink sm:w-14">
+          {cursorMs == null ? <span className="text-faint">--:--</span> : formatClock(cursorMs)}
         </span>
         <select
           value={speed}
           onChange={(e) => setSpeed(Number(e.target.value))}
-          className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm outline-none"
+          className={`${fieldCls} shrink-0 px-1.5`}
+          aria-label="Playback speed"
         >
           {[1, 60, 300, 900].map((s) => (
             <option key={s} value={s}>
-              {s}x
+              {s}×
             </option>
           ))}
         </select>
