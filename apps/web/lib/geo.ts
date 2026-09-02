@@ -14,6 +14,18 @@ export interface StopInfo {
   start: number;
   end: number;
   index: number;
+  placeName?: string | null;
+}
+
+export interface PlaceSummary {
+  id: string;
+  name: string;
+  icon: string;
+  lat: number;
+  lng: number;
+  radiusM: number;
+  notifyOnEnter?: boolean;
+  notifyOnLeave?: boolean;
 }
 
 export const TZ_OFFSET = "+05:30";
@@ -99,10 +111,92 @@ export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: 
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
+export function findMatchingPlace(
+  lat: number,
+  lng: number,
+  placesList: PlaceSummary[],
+): { place: PlaceSummary; distanceM: number } | null {
+  let closest: PlaceSummary | null = null;
+  let minDistance = Infinity;
+
+  for (const p of placesList) {
+    const dist = haversineMeters(lat, lng, p.lat, p.lng);
+    if (dist <= p.radiusM && dist < minDistance) {
+      minDistance = dist;
+      closest = p;
+    }
+  }
+
+  return closest ? { place: closest, distanceM: Math.round(minDistance) } : null;
+}
+
+export function iconForPlace(icon: string): string {
+  switch (icon.toLowerCase()) {
+    case "home":
+      return "🏠";
+    case "work":
+    case "office":
+    case "briefcase":
+      return "🏢";
+    case "gym":
+    case "fitness":
+      return "🏋️";
+    case "school":
+    case "college":
+    case "university":
+      return "🎓";
+    case "coffee":
+    case "cafe":
+      return "☕";
+    case "shop":
+    case "cart":
+      return "🛒";
+    case "star":
+      return "⭐";
+    case "airport":
+    case "plane":
+      return "✈️";
+    case "heart":
+      return "❤️";
+    default:
+      return "📍";
+  }
+}
+
+export function createCirclePolygon(
+  lat: number,
+  lng: number,
+  radiusM: number,
+  points = 64,
+): [number, number][] {
+  const coords: [number, number][] = [];
+  const R = 6371000;
+  const dByR = radiusM / R;
+  const latRad = (lat * Math.PI) / 180;
+  const lngRad = (lng * Math.PI) / 180;
+
+  for (let i = 0; i <= points; i++) {
+    const theta = (i * 2 * Math.PI) / points;
+    const pLat = Math.asin(
+      Math.sin(latRad) * Math.cos(dByR) +
+        Math.cos(latRad) * Math.sin(dByR) * Math.cos(theta),
+    );
+    const pLng =
+      lngRad +
+      Math.atan2(
+        Math.sin(theta) * Math.sin(dByR) * Math.cos(latRad),
+        Math.cos(dByR) - Math.sin(latRad) * Math.sin(pLat),
+      );
+    coords.push([(pLng * 180) / Math.PI, (pLat * 180) / Math.PI]);
+  }
+  return coords;
+}
+
 export function detectStops(
   points: TrackPoint[],
   radiusM = 75,
   minDurationMin = 10,
+  places?: PlaceSummary[],
 ): StopInfo[] {
   const stops: StopInfo[] = [];
   if (points.length < 2) return stops;
@@ -114,12 +208,18 @@ export function detectStops(
     if (dur >= minDurMs && cluster.length >= 2) {
       const lat = cluster.reduce((s, p) => s + p.lat, 0) / cluster.length;
       const lng = cluster.reduce((s, p) => s + p.lng, 0) / cluster.length;
+      let placeName: string | null = null;
+      if (places && places.length > 0) {
+        const match = findMatchingPlace(lat, lng, places);
+        if (match) placeName = match.place.name;
+      }
       stops.push({
         lat,
         lng,
         start: cluster[0].t,
         end: cluster[cluster.length - 1].t,
         index: stops.length + 1,
+        placeName,
       });
     }
   };

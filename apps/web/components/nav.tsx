@@ -23,6 +23,15 @@ function HistoryIcon() {
   );
 }
 
+function MapPinIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
+      <path d="M10 2.5a5.5 5.5 0 0 0-5.5 5.5c0 4.125 5.5 9.5 5.5 9.5s5.5-5.375 5.5-9.5A5.5 5.5 0 0 0 10 2.5Z" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="10" cy="8" r="2" />
+    </svg>
+  );
+}
+
 function SlidersIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-5 w-5">
@@ -36,6 +45,7 @@ function SlidersIcon() {
 const LINKS = [
   { href: "/dashboard", label: "Live", icon: <CrosshairIcon /> },
   { href: "/history", label: "History", icon: <HistoryIcon /> },
+  { href: "/places", label: "Places", icon: <MapPinIcon /> },
   { href: "/settings", label: "Settings", icon: <SlidersIcon /> },
 ];
 

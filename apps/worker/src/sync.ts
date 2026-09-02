@@ -3,11 +3,12 @@ import {
   db,
   locations,
   persons,
+  places,
   syncLog,
   syncState,
 } from "@app/db";
 import { decrypt, fetchLocations, parseCookiesFile, toCookieHeader } from "@app/gmaps-client";
-import { checkBatteryAlert, checkSessionAlert } from "@app/notifications";
+import { checkBatteryAlert, checkGeofenceAlert, checkSessionAlert } from "@app/notifications";
 
 const DEDUPE_RADIUS_M = 50;
 const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
@@ -52,6 +53,8 @@ export async function runSyncOnce(): Promise<{ ok: boolean; inserted: number }> 
     const authuser = Number.parseInt(process.env.GOOGLE_AUTHUSER ?? "0", 10) || 0;
     const snapshot = await fetchLocations(cookieHeader, { authuser });
 
+    const allPlaces = await db.select().from(places);
+
     let inserted = 0;
     for (const person of snapshot.people) {
       const [row] = await db
@@ -67,6 +70,17 @@ export async function runSyncOnce(): Promise<{ ok: boolean; inserted: number }> 
         })
         .returning();
       if (!row || person.timestampSec == null) continue;
+
+      // Geofence entry / departure alert
+      await checkGeofenceAlert(
+        {
+          id: row.id,
+          name: person.name,
+          lat: person.lat,
+          lng: person.lng,
+        },
+        allPlaces,
+      ).catch((err) => console.warn(`[alert] geofence check failed for ${person.name}:`, err));
 
       // Low battery check (checks threshold, charging state, and throttles)
       await checkBatteryAlert({
