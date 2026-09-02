@@ -174,3 +174,123 @@ export async function checkBatteryAlert(person: BatteryAlertTarget): Promise<voi
     }
   }
 }
+
+export interface GeofencePlace {
+  id: string;
+  name: string;
+  icon?: string;
+  lat: number;
+  lng: number;
+  radiusM: number;
+  notifyOnEnter: boolean;
+  notifyOnLeave: boolean;
+}
+
+export interface GeofenceTarget {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+}
+
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+export async function checkGeofenceAlert(
+  person: GeofenceTarget,
+  placesList: GeofencePlace[],
+): Promise<void> {
+  if (placesList.length === 0) return;
+
+  const key = `geofence:${person.id}`;
+  const now = new Date();
+
+  // Find matching place (closest inside radius)
+  let matchingPlace: GeofencePlace | null = null;
+  let minDistance = Infinity;
+
+  for (const p of placesList) {
+    const dist = haversineM(person.lat, person.lng, p.lat, p.lng);
+    if (dist <= p.radiusM && dist < minDistance) {
+      minDistance = dist;
+      matchingPlace = p;
+    }
+  }
+
+  const [existing] = await db
+    .select()
+    .from(alertState)
+    .where(eq(alertState.key, key))
+    .limit(1);
+
+  let prevPlaceId: string | null = null;
+  let prevPlaceName: string | null = null;
+  if (existing?.payload) {
+    try {
+      const parsed = JSON.parse(existing.payload);
+      prevPlaceId = parsed.placeId ?? null;
+      prevPlaceName = parsed.placeName ?? null;
+    } catch {}
+  }
+
+  const currentPlaceId = matchingPlace?.id ?? null;
+  const currentPlaceName = matchingPlace?.name ?? null;
+
+  // Check for transition
+  if (prevPlaceId !== currentPlaceId) {
+    // Left previous place?
+    if (prevPlaceId) {
+      const prevPlace = placesList.find((p) => p.id === prevPlaceId);
+      if (prevPlace?.notifyOnLeave) {
+        await sendNotification({
+          title: `Departure: ${person.name}`,
+          message: `${person.name} left ${prevPlaceName ?? prevPlace.name}.`,
+          level: "info",
+        });
+      }
+    }
+
+    // Entered new place?
+    if (currentPlaceId && matchingPlace) {
+      if (matchingPlace.notifyOnEnter) {
+        await sendNotification({
+          title: `Arrival: ${person.name}`,
+          message: `${person.name} arrived at ${matchingPlace.name}.`,
+          level: "info",
+        });
+      }
+    }
+
+    // Save updated state
+    await db
+      .insert(alertState)
+      .values({
+        key,
+        lastSentAt: now,
+        payload: JSON.stringify({
+          placeId: currentPlaceId,
+          placeName: currentPlaceName,
+        }),
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: alertState.key,
+        set: {
+          lastSentAt: now,
+          payload: JSON.stringify({
+            placeId: currentPlaceId,
+            placeName: currentPlaceName,
+          }),
+          updatedAt: now,
+        },
+      });
+  }
+}

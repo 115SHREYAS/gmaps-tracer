@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapView } from "@/components/map-view";
 import {
   colorFor,
+  createCirclePolygon,
   daysAgoISO,
   detectStops,
   escapeHtml,
@@ -18,6 +19,7 @@ import {
   interpolateAt,
   parseLocalDateTime,
   todayISO,
+  type PlaceSummary,
   type StopInfo,
   type TrackPoint,
 } from "@/lib/geo";
@@ -110,6 +112,7 @@ export function HistoryView() {
   const [to, setTo] = useState("23:59");
   const [preset, setPreset] = useState<"today" | "yesterday" | "last7d" | "custom">("today");
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [places, setPlaces] = useState<PlaceSummary[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,11 +186,18 @@ export function HistoryView() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/persons", { cache: "no-store" });
-        if (!res.ok) return;
-        const rows = (await res.json()) as PersonRow[];
-        setPersons(rows);
-        setSelected(new Set(rows.map((r) => r.id)));
+        const [pRes, plRes] = await Promise.all([
+          fetch("/api/persons", { cache: "no-store" }),
+          fetch("/api/places", { cache: "no-store" }),
+        ]);
+        if (pRes.ok) {
+          const rows = (await pRes.json()) as PersonRow[];
+          setPersons(rows);
+          setSelected(new Set(rows.map((r) => r.id)));
+        }
+        if (plRes.ok) {
+          setPlaces(await plRes.json());
+        }
       } catch {}
     }
     load();
@@ -220,7 +230,7 @@ export function HistoryView() {
               name: meta?.name ?? tr.personId.slice(0, 8),
               color: colorFor(tr.personId),
               points: tr.points,
-              stops: detectStops(tr.points),
+              stops: detectStops(tr.points, 75, 10, places),
               km: trackKm(tr.points),
             };
           })
@@ -241,7 +251,7 @@ export function HistoryView() {
       ctrl.abort();
       clearTimeout(timer);
     };
-  }, [startDate, endDate, from, to, selected, persons]);
+  }, [startDate, endDate, from, to, selected, persons, places]);
 
   const setupLayers = useCallback((m: MlMap) => {
     if (!m.getSource("paths")) {
@@ -307,11 +317,14 @@ export function HistoryView() {
           "flex h-5 w-5 items-center justify-center rounded-full border-2 bg-[#e7ecf6] font-mono text-[10px] font-medium text-[#0a0e16] shadow";
         el.style.borderColor = t.color;
         el.textContent = String(s.index);
+        const stopHeader = s.placeName
+          ? `<strong>Stop ${s.index} · ${escapeHtml(s.placeName)}</strong>`
+          : `<strong>Stop ${s.index}</strong>`;
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([s.lng, s.lat])
           .setPopup(
             new maplibregl.Popup({ offset: 12 }).setHTML(
-              `<strong>Stop ${s.index}</strong><br/>${escapeHtml(t.name)}<br/>` +
+              `${stopHeader}<br/>${escapeHtml(t.name)}<br/>` +
                 `<span style="font-family:'IBM Plex Mono',monospace;color:#8b96ac">${formatClock(s.start)} – ${formatClock(s.end)} (${formatDuration(s.end - s.start)})</span>`,
             ),
           )
@@ -332,6 +345,49 @@ export function HistoryView() {
       if (any) map.fitBounds(bounds, { padding: 70, maxZoom: 16, duration: 0 });
     }
   }, [map, tracks]);
+
+  useEffect(() => {
+    if (!map || places.length === 0) return;
+
+    const fc = {
+      type: "FeatureCollection",
+      features: places.map((p) => ({
+        type: "Feature",
+        properties: { id: p.id, name: p.name, icon: p.icon },
+        geometry: {
+          type: "Polygon",
+          coordinates: [createCirclePolygon(p.lat, p.lng, p.radiusM)],
+        },
+      })),
+    };
+
+    const src = map.getSource("places-circles") as maplibregl.GeoJSONSource | undefined;
+    if (!src) {
+      map.addSource("places-circles", { type: "geojson", data: fc as any });
+      map.addLayer({
+        id: "places-fill",
+        type: "fill",
+        source: "places-circles",
+        paint: {
+          "fill-color": "#ffae3c",
+          "fill-opacity": 0.08,
+        },
+      });
+      map.addLayer({
+        id: "places-line",
+        type: "line",
+        source: "places-circles",
+        paint: {
+          "line-color": "#ffae3c",
+          "line-width": 1.5,
+          "line-dasharray": [2, 2],
+          "line-opacity": 0.45,
+        },
+      });
+    } else {
+      src.setData(fc as any);
+    }
+  }, [map, places]);
 
   // showPoints toggles without refetching — just repaint.
   useEffect(() => {

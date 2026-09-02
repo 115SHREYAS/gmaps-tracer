@@ -5,10 +5,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MapView } from "@/components/map-view";
 import {
   colorFor,
+  createCirclePolygon,
   escapeHtml,
   formatRelative,
+  iconForPlace,
   STALE_AFTER_MS,
+  type PlaceSummary,
 } from "@/lib/geo";
+
+interface LivePlace {
+  id: string;
+  name: string;
+  icon: string;
+  distanceM: number;
+}
 
 interface LiveEntry {
   id: string;
@@ -22,13 +32,18 @@ interface LiveEntry {
   batteryPct: number | null;
   charging: boolean | null;
   recordedAt: string;
+  place?: LivePlace | null;
 }
 
 function popupHtml(e: LiveEntry): string {
   const battery =
     e.batteryPct != null ? `${e.batteryPct}%${e.charging ? " (charging)" : ""}` : "";
+  const placeBadge = e.place
+    ? `<span style="display:inline-block;padding:2px 6px;border-radius:4px;background:#ffae3c20;color:#ffae3c;font-size:11px;font-weight:600;margin:2px 0;">${iconForPlace(e.place.icon)} At ${escapeHtml(e.place.name)}</span>`
+    : "";
   return [
     `<strong>${escapeHtml(e.name)}</strong>`,
+    placeBadge,
     e.address ? escapeHtml(e.address) : "",
     `<span style="font-family:'IBM Plex Mono',monospace;color:#8b96ac">${formatRelative(new Date(e.recordedAt).getTime())}</span>`,
     battery ? `<span style="color:#8b96ac">${battery}</span>` : "",
@@ -71,6 +86,7 @@ function Avatar({ entry, size }: { entry: LiveEntry; size: string }) {
 
 export function LiveDashboard() {
   const [entries, setEntries] = useState<LiveEntry[]>([]);
+  const [places, setPlaces] = useState<PlaceSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [offlineTiles, setOfflineTiles] = useState(true);
   // State (not just a ref) so the marker effect reruns once the map is ready,
@@ -91,11 +107,62 @@ export function LiveDashboard() {
     }
   }, []);
 
+  const fetchPlaces = useCallback(async () => {
+    try {
+      const res = await fetch("/api/places", { cache: "no-store" });
+      if (res.ok) setPlaces(await res.json());
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchLive();
+    fetchPlaces();
     const id = setInterval(fetchLive, 30_000);
     return () => clearInterval(id);
-  }, [fetchLive]);
+  }, [fetchLive, fetchPlaces]);
+
+  useEffect(() => {
+    if (!map || places.length === 0) return;
+
+    const fc = {
+      type: "FeatureCollection",
+      features: places.map((p) => ({
+        type: "Feature",
+        properties: { id: p.id, name: p.name, icon: p.icon },
+        geometry: {
+          type: "Polygon",
+          coordinates: [createCirclePolygon(p.lat, p.lng, p.radiusM)],
+        },
+      })),
+    };
+
+    const src = map.getSource("places-circles") as maplibregl.GeoJSONSource | undefined;
+    if (!src) {
+      map.addSource("places-circles", { type: "geojson", data: fc as any });
+      map.addLayer({
+        id: "places-fill",
+        type: "fill",
+        source: "places-circles",
+        paint: {
+          "fill-color": "#ffae3c",
+          "fill-opacity": 0.08,
+        },
+      });
+      map.addLayer({
+        id: "places-line",
+        type: "line",
+        source: "places-circles",
+        paint: {
+          "line-color": "#ffae3c",
+          "line-width": 1.5,
+          "line-dasharray": [2, 2],
+          "line-opacity": 0.5,
+        },
+      });
+    } else {
+      src.setData(fc as any);
+    }
+  }, [map, places]);
 
   useEffect(() => {
     if (!map) return;
@@ -207,7 +274,15 @@ export function LiveDashboard() {
                     </p>
                   </div>
                 </div>
-                <p className="mt-2 line-clamp-2 min-h-8 text-xs leading-snug text-muted">
+                {e.place && (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded border border-accent/30 bg-accent/15 px-2 py-0.5 font-display text-[11px] font-semibold text-accent">
+                      <span>{iconForPlace(e.place.icon)}</span>
+                      <span>At {e.place.name}</span>
+                    </span>
+                  </div>
+                )}
+                <p className="mt-1.5 line-clamp-2 min-h-6 text-xs leading-snug text-muted">
                   {e.address ?? "unknown address"}
                 </p>
                 <p className="mt-1.5 font-mono text-[10px] text-faint">

@@ -145,8 +145,13 @@ gunzip -c backups/gpstracer-2026-08-21.sql.gz | \
   scrubber and 1x/60x/300x/900x/1800x/3600x speeds.
 - **GPX & GeoJSON export** — download filtered track history directly as standard `.gpx`
   (for Garmin/Strava) or `.geojson` files from the History view or API.
+- **Named places & geofences** — define custom named places (Home, Office, Gym, School, etc.)
+  with configurable circle radii directly on an interactive map. Live cards and popups display
+  prominent place badges (e.g. `🏠 At Home`, `🏢 At Office`), stop markers in history are
+  automatically annotated with place names, and notifications fire on arrival and departure.
 - **Automated notifications & alerts** — dispatch real-time alerts via Telegram bot,
   Discord webhook, ntfy.sh topic, or generic webhook for:
+  - **Geofence arrivals & departures**: alerts when someone enters or leaves a named place.
   - **Google session expiry**: alerts immediately when cookies are invalidated so you can re-upload before missing tracks.
   - **Low battery warnings**: alerts when someone's phone drops below a configurable threshold (default ≤20%) and isn't charging.
 - **Filters are server-side** — SQL between `recorded_at` bounds (IST via `TZ_OFFSET`).

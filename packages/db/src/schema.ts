@@ -64,6 +64,18 @@ export const alertState = pgTable("alert_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const places = pgTable("places", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  icon: text("icon").notNull().default("pin"),
+  lat: doublePrecision("lat").notNull(),
+  lng: doublePrecision("lng").notNull(),
+  radiusM: integer("radius_m").notNull().default(100),
+  notifyOnEnter: boolean("notify_on_enter").notNull().default(true),
+  notifyOnLeave: boolean("notify_on_leave").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const personsRelations = relations(persons, ({ many }) => ({
   locations: many(locations),
 }));
@@ -77,3 +89,5 @@ export type LocationPoint = typeof locations.$inferSelect;
 export type SyncState = typeof syncState.$inferSelect;
 export type SyncLogEntry = typeof syncLog.$inferSelect;
 export type AlertState = typeof alertState.$inferSelect;
+export type Place = typeof places.$inferSelect;
+export type NewPlace = typeof places.$inferInsert;
