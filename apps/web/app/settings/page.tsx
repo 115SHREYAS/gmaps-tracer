@@ -21,8 +21,22 @@ interface Status {
   logs: SyncLogRow[];
 }
 
+interface NotificationConfig {
+  channels: {
+    telegram: boolean;
+    discord: boolean;
+    ntfy: boolean;
+    webhook: boolean;
+    totalConfigured: number;
+  };
+  batteryThreshold: number;
+}
+
 export default function SettingsPage() {
   const [status, setStatus] = useState<Status | null>(null);
+  const [notifConfig, setNotifConfig] = useState<NotificationConfig | null>(null);
+  const [testAlertMsg, setTestAlertMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [testingAlert, setTestingAlert] = useState(false);
   const [cookieText, setCookieText] = useState("");
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,6 +47,11 @@ export default function SettingsPage() {
       const res = await fetch("/api/sync/status", { cache: "no-store" });
       if (res.ok) setStatus((await res.json()) as Status);
     } catch {}
+
+    try {
+      const res = await fetch("/api/notifications/status", { cache: "no-store" });
+      if (res.ok) setNotifConfig((await res.json()) as NotificationConfig);
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -40,6 +59,29 @@ export default function SettingsPage() {
     const id = setInterval(loadStatus, 30_000);
     return () => clearInterval(id);
   }, [loadStatus]);
+
+  async function sendTestAlert() {
+    setTestingAlert(true);
+    setTestAlertMsg(null);
+    try {
+      const res = await fetch("/api/notifications/test", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        results?: Array<{ channel: string; ok: boolean; error?: string }>;
+      };
+      if (res.ok && data.ok) {
+        const succ = data.results?.filter((r) => r.ok).map((r) => r.channel).join(", ");
+        setTestAlertMsg({ kind: "ok", text: `Test alert dispatched successfully to: ${succ}` });
+      } else {
+        setTestAlertMsg({ kind: "err", text: data.error ?? "Failed to dispatch test notification" });
+      }
+    } catch (err) {
+      setTestAlertMsg({ kind: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setTestingAlert(false);
+    }
+  }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -180,6 +222,100 @@ export default function SettingsPage() {
               </div>
             </>
           )}
+        </section>
+
+        {/* Notifications & Alerts */}
+        <section className="rounded-xl border border-line bg-surface p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="eyebrow">Notifications & Alerts</h2>
+              <p className="mt-1 text-xs text-muted">
+                Receive proactive alerts when Google session expires or phone batteries run low.
+              </p>
+            </div>
+            {notifConfig && (
+              <span
+                className={`rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider ${
+                  notifConfig.channels.totalConfigured > 0
+                    ? "border-ok/40 bg-ok/10 text-ok"
+                    : "border-line bg-raised text-faint"
+                }`}
+              >
+                {notifConfig.channels.totalConfigured > 0
+                  ? `${notifConfig.channels.totalConfigured} active`
+                  : "unconfigured"}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {[
+              { label: "Telegram", active: notifConfig?.channels.telegram, env: "TELEGRAM_BOT_TOKEN" },
+              { label: "Discord", active: notifConfig?.channels.discord, env: "DISCORD_WEBHOOK_URL" },
+              { label: "ntfy.sh", active: notifConfig?.channels.ntfy, env: "NTFY_URL / TOPIC" },
+              { label: "Webhook", active: notifConfig?.channels.webhook, env: "GENERIC_WEBHOOK_URL" },
+            ].map((c) => (
+              <div key={c.label} className="rounded-lg border border-line bg-raised p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium">{c.label}</span>
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${c.active ? "bg-ok" : "bg-faint/40"}`}
+                  />
+                </div>
+                <p className="mt-1 font-mono text-[10px] text-faint">
+                  {c.active ? "configured" : "not set"}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-lg border border-line bg-raised p-3.5 text-xs">
+            <h3 className="eyebrow mb-2">Automated Alert Triggers</h3>
+            <ul className="space-y-1.5 text-muted">
+              <li className="flex items-center gap-2">
+                <span className="text-danger">●</span>
+                <span><strong>Session Expiry:</strong> Alerts immediately if Google rejects session cookies.</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-accent">●</span>
+                <span>
+                  <strong>Low Battery:</strong> Alerts when any device drops below{" "}
+                  <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px] text-ink">
+                    {notifConfig?.batteryThreshold ?? 20}%
+                  </code>{" "}
+                  while discharging.
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          {testAlertMsg && (
+            <p
+              role="status"
+              className={`mt-3 rounded-md border px-3 py-2 font-mono text-xs leading-relaxed ${
+                testAlertMsg.kind === "ok"
+                  ? "border-ok/30 bg-ok/[0.08] text-ok"
+                  : "border-danger/30 bg-danger/[0.08] text-danger"
+              }`}
+            >
+              {testAlertMsg.text}
+            </p>
+          )}
+
+          <div className="mt-4 flex items-center gap-3">
+            <button
+              onClick={sendTestAlert}
+              disabled={testingAlert || notifConfig?.channels.totalConfigured === 0}
+              className="rounded-md border border-line bg-raised px-4 py-2 font-display text-xs font-semibold uppercase tracking-[0.12em] text-ink transition-colors hover:border-faint/60 hover:bg-surface disabled:opacity-40"
+            >
+              {testingAlert ? "Dispatching…" : "Send test alert"}
+            </button>
+            {notifConfig?.channels.totalConfigured === 0 && (
+              <span className="font-mono text-[11px] text-faint">
+                Configure TELEGRAM_BOT_TOKEN, DISCORD_WEBHOOK_URL, or NTFY_URL in .env to enable.
+              </span>
+            )}
+          </div>
         </section>
 
         {/* Cookies upload */}

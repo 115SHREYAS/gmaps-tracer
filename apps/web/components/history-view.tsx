@@ -6,10 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapView } from "@/components/map-view";
 import {
   colorFor,
+  daysAgoISO,
   detectStops,
   escapeHtml,
   formatClock,
+  formatDateTime,
   formatDuration,
+  generateGeoJson,
+  generateGpx,
   haversineMeters,
   interpolateAt,
   parseLocalDateTime,
@@ -100,9 +104,12 @@ function traveledFeatures(tracks: Track[], cursor: number): FeatureCollection<Li
 export function HistoryView() {
   const [persons, setPersons] = useState<PersonRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [date, setDate] = useState(todayISO());
+  const [startDate, setStartDate] = useState(todayISO());
+  const [endDate, setEndDate] = useState(todayISO());
   const [from, setFrom] = useState("00:00");
   const [to, setTo] = useState("23:59");
+  const [preset, setPreset] = useState<"today" | "yesterday" | "last7d" | "custom">("today");
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -116,8 +123,62 @@ export function HistoryView() {
   const stopMarkersRef = useRef<maplibregl.Marker[]>([]);
   const playMarkersRef = useRef<Map<string, maplibregl.Marker>>(new Map());
 
-  const fromMs = useMemo(() => parseLocalDateTime(date, from) ?? 0, [date, from]);
-  const toMs = useMemo(() => parseLocalDateTime(date, to) ?? Date.now(), [date, to]);
+  const fromMs = useMemo(() => parseLocalDateTime(startDate, from) ?? 0, [startDate, from]);
+  const toMs = useMemo(() => parseLocalDateTime(endDate, to) ?? Date.now(), [endDate, to]);
+  const isMultiDay = startDate !== endDate;
+
+  function applyPreset(p: "today" | "yesterday" | "last7d") {
+    setPreset(p);
+    if (p === "today") {
+      const t = todayISO();
+      setStartDate(t);
+      setEndDate(t);
+      setFrom("00:00");
+      setTo("23:59");
+    } else if (p === "yesterday") {
+      const y = daysAgoISO(1);
+      setStartDate(y);
+      setEndDate(y);
+      setFrom("00:00");
+      setTo("23:59");
+    } else if (p === "last7d") {
+      setStartDate(daysAgoISO(6));
+      setEndDate(todayISO());
+      setFrom("00:00");
+      setTo("23:59");
+    }
+  }
+
+  function handleExport(format: "gpx" | "geojson") {
+    setShowExportMenu(false);
+    if (tracks.length === 0) return;
+    const suffix = `${startDate}${startDate !== endDate ? `-to-${endDate}` : ""}`;
+    if (format === "gpx") {
+      const xml = generateGpx(tracks, `GPS Tracks ${startDate} to ${endDate}`);
+      const blob = new Blob([xml], { type: "application/gpx+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gpstracks-${suffix}.gpx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      const geojson = generateGeoJson(tracks);
+      const blob = new Blob([JSON.stringify(geojson, null, 2)], {
+        type: "application/geo+json;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gpstracks-${suffix}.geojson`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }
 
   useEffect(() => {
     async function load() {
@@ -133,13 +194,13 @@ export function HistoryView() {
   }, []);
 
   useEffect(() => {
-    if (!date || persons.length === 0) return;
+    if (!startDate || !endDate || persons.length === 0) return;
     const ctrl = new AbortController();
     const timer = setTimeout(async () => {
       setLoading(true);
       setError(null);
       try {
-        const qs = new URLSearchParams({ date, from, to });
+        const qs = new URLSearchParams({ startDate, endDate, from, to });
         if (selected.size > 0) qs.set("persons", [...selected].join(","));
         const res = await fetch(`/api/locations?${qs.toString()}`, {
           signal: ctrl.signal,
@@ -180,7 +241,7 @@ export function HistoryView() {
       ctrl.abort();
       clearTimeout(timer);
     };
-  }, [date, from, to, selected, persons]);
+  }, [startDate, endDate, from, to, selected, persons]);
 
   const setupLayers = useCallback((m: MlMap) => {
     if (!m.getSource("paths")) {
@@ -349,17 +410,74 @@ export function HistoryView() {
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
-        <label className="flex items-center gap-2">
-          <span className="eyebrow">Day</span>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={fieldCls} />
-        </label>
-        <div className="flex items-center gap-2">
-          <span className="eyebrow">Window</span>
-          <input type="time" value={from} onChange={(e) => setFrom(e.target.value)} className={fieldCls} />
-          <span className="font-mono text-xs text-faint">→</span>
-          <input type="time" value={to} onChange={(e) => setTo(e.target.value)} className={fieldCls} />
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
+        {/* Quick Presets */}
+        <div className="flex items-center rounded-md border border-line bg-raised p-0.5">
+          {(["today", "yesterday", "last7d"] as const).map((p) => (
+            <button
+              key={p}
+              onClick={() => applyPreset(p)}
+              className={`rounded px-2.5 py-1 font-display text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                preset === p
+                  ? "bg-surface text-accent shadow-xs"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
+              {p === "today" ? "Today" : p === "yesterday" ? "Yesterday" : "7 Days"}
+            </button>
+          ))}
         </div>
+
+        {/* Date bounds */}
+        <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              setPreset("custom");
+            }}
+            className={fieldCls}
+            title="Start date"
+          />
+          <span className="font-mono text-xs text-faint">→</span>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => {
+              setEndDate(e.target.value);
+              setPreset("custom");
+            }}
+            className={fieldCls}
+            title="End date"
+          />
+        </div>
+
+        {/* Time bounds */}
+        <div className="flex items-center gap-1.5">
+          <input
+            type="time"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setPreset("custom");
+            }}
+            className={fieldCls}
+            title="Window start"
+          />
+          <span className="font-mono text-xs text-faint">→</span>
+          <input
+            type="time"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setPreset("custom");
+            }}
+            className={fieldCls}
+            title="Window end"
+          />
+        </div>
+
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
           <input
             type="checkbox"
@@ -369,6 +487,40 @@ export function HistoryView() {
           />
           raw points
         </label>
+
+        {/* Export Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowExportMenu((v) => !v)}
+            disabled={tracks.length === 0}
+            className="flex items-center gap-1.5 rounded-md border border-line bg-raised px-2.5 py-1.5 font-display text-xs font-semibold uppercase tracking-wider text-muted transition-colors hover:border-faint/60 hover:text-ink disabled:opacity-40"
+            title="Export tracks"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-3.5 w-3.5">
+              <path d="M10 3v9m0 0 3-3m-3 3-3-3M3 14v2a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>Export</span>
+            <span className="text-[9px]">▾</span>
+          </button>
+          {showExportMenu && (
+            <div className="absolute left-0 top-full z-30 mt-1 w-44 rounded-lg border border-line bg-surface p-1 shadow-xl">
+              <button
+                onClick={() => handleExport("gpx")}
+                className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left font-mono text-xs text-ink transition-colors hover:bg-raised"
+              >
+                <span>Export GPX</span>
+                <span className="text-[10px] text-faint">.gpx</span>
+              </button>
+              <button
+                onClick={() => handleExport("geojson")}
+                className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left font-mono text-xs text-ink transition-colors hover:bg-raised"
+              >
+                <span>Export GeoJSON</span>
+                <span className="text-[10px] text-faint">.geojson</span>
+              </button>
+            </div>
+          )}
+        </div>
         <div className="ml-auto flex max-w-full items-center gap-1.5 scroll-slim max-lg:w-full max-lg:overflow-x-auto lg:overflow-visible lg:pb-0">
           {persons.length === 0 && (
             <span className="font-mono text-[11px] text-faint">no persons tracked yet</span>
@@ -484,8 +636,14 @@ export function HistoryView() {
           disabled={tracks.length === 0}
           aria-label="Timeline position"
         />
-        <span className="w-12 shrink-0 text-right font-mono text-sm tabular-nums text-ink sm:w-14">
-          {cursorMs == null ? <span className="text-faint">--:--</span> : formatClock(cursorMs)}
+        <span className="min-w-16 shrink-0 text-right font-mono text-xs tabular-nums text-ink sm:min-w-24 sm:text-sm">
+          {cursorMs == null ? (
+            <span className="text-faint">--:--</span>
+          ) : isMultiDay ? (
+            formatDateTime(cursorMs)
+          ) : (
+            formatClock(cursorMs)
+          )}
         </span>
         <select
           value={speed}
@@ -493,7 +651,7 @@ export function HistoryView() {
           className={`${fieldCls} shrink-0 px-1.5`}
           aria-label="Playback speed"
         >
-          {[1, 60, 300, 900].map((s) => (
+          {[1, 60, 300, 900, 1800, 3600].map((s) => (
             <option key={s} value={s}>
               {s}×
             </option>

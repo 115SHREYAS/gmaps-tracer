@@ -157,10 +157,94 @@ export function interpolateAt(points: TrackPoint[], tMs: number): TrackPoint | n
   };
 }
 
+export function daysAgoISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE_LABEL }).format(d);
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+export function escapeXml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+export function generateGpx(
+  tracks: Array<{ personId: string; name: string; points: TrackPoint[] }>,
+  title = "GpsLocationTracer Export",
+): string {
+  const lines: string[] = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<gpx version="1.1" creator="GpsLocationTracer" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">',
+    "  <metadata>",
+    `    <name>${escapeXml(title)}</name>`,
+    `    <time>${new Date().toISOString()}</time>`,
+    "  </metadata>",
+  ];
+
+  for (const track of tracks) {
+    if (track.points.length === 0) continue;
+    lines.push("  <trk>");
+    lines.push(`    <name>${escapeXml(track.name)}</name>`);
+    lines.push("    <trkseg>");
+    for (const pt of track.points) {
+      lines.push(`      <trkpt lat="${pt.lat}" lon="${pt.lng}">`);
+      lines.push(`        <time>${new Date(pt.t).toISOString()}</time>`);
+      const details = [
+        pt.address ? `Address: ${pt.address}` : "",
+        pt.batteryPct != null ? `Battery: ${pt.batteryPct}%` : "",
+        pt.accuracyM != null ? `Accuracy: ±${Math.round(pt.accuracyM)}m` : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      if (details) {
+        lines.push(`        <desc>${escapeXml(details)}</desc>`);
+      }
+      lines.push("      </trkpt>");
+    }
+    lines.push("    </trkseg>");
+    lines.push("  </trk>");
+  }
+
+  lines.push("</gpx>");
+  return lines.join("\n");
+}
+
+export function generateGeoJson(
+  tracks: Array<{ personId: string; name: string; color?: string; points: TrackPoint[] }>,
+): object {
+  const features = tracks.map((t) => ({
+    type: "Feature",
+    properties: {
+      personId: t.personId,
+      name: t.name,
+      color: t.color,
+      pointsCount: t.points.length,
+      startedAt: t.points.length > 0 ? new Date(t.points[0].t).toISOString() : null,
+      endedAt: t.points.length > 0 ? new Date(t.points[t.points.length - 1].t).toISOString() : null,
+      timestamps: t.points.map((p) => p.t),
+      addresses: t.points.map((p) => p.address ?? null),
+      batteryLevels: t.points.map((p) => p.batteryPct ?? null),
+    },
+    geometry: {
+      type: "LineString",
+      coordinates: t.points.map((p) => [p.lng, p.lat]),
+    },
+  }));
+
+  return {
+    type: "FeatureCollection",
+    features,
+  };
 }

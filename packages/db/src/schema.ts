@@ -57,6 +57,13 @@ export const syncLog = pgTable("sync_log", {
   error: text("error"),
 });
 
+export const alertState = pgTable("alert_state", {
+  key: text("key").primaryKey(),
+  lastSentAt: timestamp("last_sent_at", { withTimezone: true }).notNull().defaultNow(),
+  payload: text("payload"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const personsRelations = relations(persons, ({ many }) => ({
   locations: many(locations),
 }));
@@ -69,3 +76,4 @@ export type Person = typeof persons.$inferSelect;
 export type LocationPoint = typeof locations.$inferSelect;
 export type SyncState = typeof syncState.$inferSelect;
 export type SyncLogEntry = typeof syncLog.$inferSelect;
+export type AlertState = typeof alertState.$inferSelect;

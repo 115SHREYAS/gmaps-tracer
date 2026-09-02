@@ -139,14 +139,21 @@ gunzip -c backups/gpstracer-2026-08-21.sql.gz | \
 
 - **Live dashboard** — latest position per person, auto-refresh 30 s, address, battery,
   charging, stale badge after 15 min.
-- **History** — pick date + time range + people; per-person colored polylines, raw
-  point dots, numbered stop markers (stayed ≥10 min within 75 m), playback animation
-  with scrubber and 1x/60x/300x/900x speed.
+- **History & multi-day ranges** — pick start/end date or quick presets (Today, Yesterday,
+  Last 7 Days) + time range + people; per-person colored polylines, raw point dots,
+  numbered stop markers (stayed ≥10 min within 75 m), playback animation with timeline
+  scrubber and 1x/60x/300x/900x/1800x/3600x speeds.
+- **GPX & GeoJSON export** — download filtered track history directly as standard `.gpx`
+  (for Garmin/Strava) or `.geojson` files from the History view or API.
+- **Automated notifications & alerts** — dispatch real-time alerts via Telegram bot,
+  Discord webhook, ntfy.sh topic, or generic webhook for:
+  - **Google session expiry**: alerts immediately when cookies are invalidated so you can re-upload before missing tracks.
+  - **Low battery warnings**: alerts when someone's phone drops below a configurable threshold (default ≤20%) and isn't charging.
 - **Filters are server-side** — SQL between `recorded_at` bounds (IST via `TZ_OFFSET`).
 - **Dedupe** — a point is stored only if it differs from the last reading (>50 m or
   ≥5 min newer), keeping stationary periods compact.
-- **Sync health** — Settings shows last poll, recent runs, errors; red banner when the
-  Google session goes invalid.
+- **Sync health** — Settings shows last poll, recent runs, errors, active notification channels,
+  and a live test-alert dispatcher.
 
 ## Configuration reference
 
@@ -159,6 +166,11 @@ gunzip -c backups/gpstracer-2026-08-21.sql.gz | \
 | `GOOGLE_AUTHUSER` | Account index to query when multiple Google accounts share one browser (default 0) |
 | `TZ_OFFSET` | Offset used for date filters (default `+05:30`) |
 | `GOOGLE_EMAIL` | Optional: also track the authenticated account itself |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Optional: Telegram bot credentials for alerts |
+| `DISCORD_WEBHOOK_URL` | Optional: Discord webhook URL for alerts |
+| `NTFY_URL` or `NTFY_TOPIC` | Optional: ntfy server URL or topic name for alerts |
+| `GENERIC_WEBHOOK_URL` | Optional: HTTP endpoint receiving POST JSON alert payloads |
+| `BATTERY_ALERT_THRESHOLD` | Battery percentage triggering low-battery alert (default 20) |
 | `NEXT_PUBLIC_MAP_STYLE` | `pmtiles` (default) or `osm` fallback (build-time) |
 | `NEXT_PUBLIC_MAP_CENTER_*`, `NEXT_PUBLIC_MAP_ZOOM` | Initial viewport (build-time) |
 | `TILES_PATH` | Server dir served under `/tiles` (default `./tiles`) |

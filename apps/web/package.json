@@ -11,6 +11,7 @@
   "dependencies": {
     "@app/db": "workspace:*",
     "@app/gmaps-client": "workspace:*",
+    "@app/notifications": "workspace:*",
     "@protomaps/basemaps": ">=4 <6",
     "drizzle-orm": ">=0.36",
     "iron-session": ">=8 <9",

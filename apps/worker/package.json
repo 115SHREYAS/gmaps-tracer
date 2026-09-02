@@ -12,6 +12,7 @@
   "dependencies": {
     "@app/db": "workspace:*",
     "@app/gmaps-client": "workspace:*",
+    "@app/notifications": "workspace:*",
     "drizzle-orm": ">=0.36",
     "dotenv": "^16.4.5"
   },

@@ -7,6 +7,7 @@ import {
   syncState,
 } from "@app/db";
 import { decrypt, fetchLocations, parseCookiesFile, toCookieHeader } from "@app/gmaps-client";
+import { checkBatteryAlert, checkSessionAlert } from "@app/notifications";
 
 const DEDUPE_RADIUS_M = 50;
 const DEDUPE_WINDOW_MS = 5 * 60 * 1000;
@@ -67,6 +68,17 @@ export async function runSyncOnce(): Promise<{ ok: boolean; inserted: number }> 
         .returning();
       if (!row || person.timestampSec == null) continue;
 
+      // Low battery check (checks threshold, charging state, and throttles)
+      await checkBatteryAlert({
+        id: row.id,
+        name: person.name,
+        batteryPct: person.batteryPct,
+        charging: person.charging,
+        address: person.address,
+        lat: person.lat,
+        lng: person.lng,
+      }).catch((err) => console.warn(`[alert] battery check failed for ${person.name}:`, err));
+
       const recordedAt = new Date(person.timestampSec * 1000);
 
       // Dedupe: skip identical readings and stationary micro-movements.
@@ -108,6 +120,10 @@ export async function runSyncOnce(): Promise<{ ok: boolean; inserted: number }> 
       ok: true,
     });
 
+    await checkSessionAlert(true).catch((err) =>
+      console.warn("[alert] session recovery check failed:", err),
+    );
+
     console.log(`[sync] ok people=${snapshot.people.length} inserted=${inserted}`);
     return { ok: true, inserted };
   } catch (err) {
@@ -122,6 +138,13 @@ export async function runSyncOnce(): Promise<{ ok: boolean; inserted: number }> 
       })
       .where(eq(syncState.id, 1));
     await db.insert(syncLog).values({ ok: false, error: message });
+
+    if (isAuthError) {
+      await checkSessionAlert(false, message).catch((alertErr) =>
+        console.warn("[alert] session expiry alert failed:", alertErr),
+      );
+    }
+
     console.error(`[sync] failed: ${message}`);
     return { ok: false, inserted: 0 };
   }
