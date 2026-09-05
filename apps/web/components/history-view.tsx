@@ -5,6 +5,7 @@ import maplibregl, { type Map as MlMap } from "maplibre-gl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapView } from "@/components/map-view";
 import {
+  calculatePointSpeeds,
   colorFor,
   daysAgoISO,
   detectStops,
@@ -17,9 +18,13 @@ import {
   haversineMeters,
   interpolateAt,
   parseLocalDateTime,
+  segmentTrips,
+  speedToColor,
   todayISO,
+  type SpeedPoint,
   type StopInfo,
   type TrackPoint,
+  type TripSegment,
 } from "@/lib/geo";
 
 interface PersonRow {
@@ -37,6 +42,8 @@ interface Track {
   name: string;
   color: string;
   points: TrackPoint[];
+  speedPoints: SpeedPoint[];
+  trips: TripSegment[];
   stops: StopInfo[];
   km: number;
 }
@@ -51,19 +58,54 @@ function trackKm(points: TrackPoint[]): number {
   return d / 1000;
 }
 
-function pathFeatures(tracks: Track[]): FeatureCollection<LineString> {
+function pathFeatures(tracks: Track[], colorMode: "person" | "speed" = "person"): FeatureCollection<LineString> {
+  if (colorMode === "person") {
+    return {
+      type: "FeatureCollection",
+      features: tracks
+        .filter((t) => t.points.length >= 2)
+        .map((t) => ({
+          type: "Feature" as const,
+          properties: { color: t.color },
+          geometry: {
+            type: "LineString" as const,
+            coordinates: t.points.map((p) => [p.lng, p.lat]),
+          },
+        })),
+    };
+  }
+
+  // Velocity-colored line segments
+  const features: Array<{
+    type: "Feature";
+    properties: { color: string; speed: number };
+    geometry: { type: "LineString"; coordinates: [number, number][] };
+  }> = [];
+
+  for (const t of tracks) {
+    const pts = t.speedPoints;
+    for (let i = 1; i < pts.length; i++) {
+      const avgSpeed = (pts[i - 1].speedKmh + pts[i].speedKmh) / 2;
+      features.push({
+        type: "Feature",
+        properties: {
+          color: speedToColor(avgSpeed),
+          speed: Math.round(avgSpeed),
+        },
+        geometry: {
+          type: "LineString",
+          coordinates: [
+            [pts[i - 1].lng, pts[i - 1].lat],
+            [pts[i].lng, pts[i].lat],
+          ],
+        },
+      });
+    }
+  }
+
   return {
     type: "FeatureCollection",
-    features: tracks
-      .filter((t) => t.points.length >= 2)
-      .map((t) => ({
-        type: "Feature" as const,
-        properties: { color: t.color },
-        geometry: {
-          type: "LineString" as const,
-          coordinates: t.points.map((p) => [p.lng, p.lat]),
-        },
-      })),
+    features,
   };
 }
 
@@ -110,6 +152,9 @@ export function HistoryView() {
   const [to, setTo] = useState("23:59");
   const [preset, setPreset] = useState<"today" | "yesterday" | "last7d" | "custom">("today");
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [colorMode, setColorMode] = useState<"person" | "speed">("person");
+  const [sideTab, setSideTab] = useState<"summary" | "trips">("summary");
+  const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +171,44 @@ export function HistoryView() {
   const fromMs = useMemo(() => parseLocalDateTime(startDate, from) ?? 0, [startDate, from]);
   const toMs = useMemo(() => parseLocalDateTime(endDate, to) ?? Date.now(), [endDate, to]);
   const isMultiDay = startDate !== endDate;
+
+  const allTrips = useMemo(() => {
+    return tracks.flatMap((t) =>
+      t.trips.map((tr) => ({
+        ...tr,
+        personName: t.name,
+        personColor: t.color,
+      })),
+    );
+  }, [tracks]);
+
+  const currentCursorSpeed = useMemo(() => {
+    if (cursorMs == null || tracks.length === 0) return null;
+    let maxSpd = 0;
+    for (const t of tracks) {
+      if (t.speedPoints.length === 0) continue;
+      let nearestDist = Infinity;
+      let spd = 0;
+      for (const sp of t.speedPoints) {
+        const dt = Math.abs(sp.t - cursorMs);
+        if (dt < nearestDist) {
+          nearestDist = dt;
+          spd = sp.speedKmh;
+        }
+      }
+      if (spd > maxSpd) maxSpd = spd;
+    }
+    return Math.round(maxSpd);
+  }, [cursorMs, tracks]);
+
+  function focusTrip(tr: TripSegment) {
+    setSelectedTripId(tr.id);
+    if (!map || tr.points.length === 0) return;
+    const b = new maplibregl.LngLatBounds();
+    for (const p of tr.points) b.extend([p.lng, p.lat]);
+    map.fitBounds(b, { padding: 80, maxZoom: 16, duration: 600 });
+    setCursorMs(tr.startTime);
+  }
 
   function applyPreset(p: "today" | "yesterday" | "last7d") {
     setPreset(p);
@@ -220,6 +303,8 @@ export function HistoryView() {
               name: meta?.name ?? tr.personId.slice(0, 8),
               color: colorFor(tr.personId),
               points: tr.points,
+              speedPoints: calculatePointSpeeds(tr.points),
+              trips: segmentTrips(tr.points, tr.personId),
               stops: detectStops(tr.points),
               km: trackKm(tr.points),
             };
@@ -293,7 +378,11 @@ export function HistoryView() {
     if (!map) return;
 
     const src = map.getSource("paths") as maplibregl.GeoJSONSource | undefined;
-    src?.setData(pathFeatures(tracks));
+    src?.setData(pathFeatures(tracks, colorMode));
+    if (map.getLayer("paths-line")) {
+      map.setPaintProperty("paths-line", "line-opacity", colorMode === "speed" ? 0.85 : 0.45);
+      map.setPaintProperty("paths-line", "line-width", colorMode === "speed" ? 3.5 : 3);
+    }
     const pts = map.getSource("points") as maplibregl.GeoJSONSource | undefined;
     pts?.setData(showPoints ? pointFeatures(tracks) : EMPTY_FC);
 
@@ -331,7 +420,7 @@ export function HistoryView() {
       }
       if (any) map.fitBounds(bounds, { padding: 70, maxZoom: 16, duration: 0 });
     }
-  }, [map, tracks]);
+  }, [map, tracks, colorMode]);
 
   // showPoints toggles without refetching — just repaint.
   useEffect(() => {
@@ -521,6 +610,46 @@ export function HistoryView() {
             </div>
           )}
         </div>
+        {/* Color Mode Switcher */}
+        <div className="flex items-center rounded-md border border-line bg-raised p-0.5">
+          <button
+            onClick={() => setColorMode("person")}
+            className={`rounded px-2 py-1 font-display text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+              colorMode === "person" ? "bg-surface text-ink shadow-sm" : "text-muted hover:text-ink"
+            }`}
+          >
+            Person
+          </button>
+          <button
+            onClick={() => setColorMode("speed")}
+            className={`rounded px-2 py-1 font-display text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+              colorMode === "speed" ? "bg-surface text-accent shadow-sm" : "text-muted hover:text-ink"
+            }`}
+          >
+            Velocity
+          </button>
+        </div>
+
+        {colorMode === "speed" && (
+          <div className="hidden sm:flex items-center gap-2 font-mono text-[10px] text-muted">
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#64748b]" /> &lt;5
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#22c55e]" /> 5–20
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#38bdf8]" /> 20–45
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#f59e0b]" /> 45–70
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#ef4444]" /> 70+ km/h
+            </span>
+          </div>
+        )}
+
         <div className="ml-auto flex max-w-full items-center gap-1.5 scroll-slim max-lg:w-full max-lg:overflow-x-auto lg:overflow-visible lg:pb-0">
           {persons.length === 0 && (
             <span className="font-mono text-[11px] text-faint">no persons tracked yet</span>
@@ -559,7 +688,7 @@ export function HistoryView() {
         />
 
         {/* Left telemetry stack */}
-        <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[230px] flex-col items-start gap-1.5">
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex w-72 max-w-[calc(100%-1rem)] flex-col items-start gap-1.5">
           {loading && (
             <div className="hud-chip pointer-events-auto px-3 py-1.5 font-mono text-[11px] text-muted">
               Loading tracks…
@@ -570,17 +699,73 @@ export function HistoryView() {
               {error}
             </div>
           )}
-          {tracks.map((t) => (
-            <div key={t.personId} className="hud-chip pointer-events-auto px-2.5 py-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-medium">
-                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
-                {t.name}
-              </div>
-              <div className="mt-0.5 font-mono text-[10px] text-muted">
-                {t.km.toFixed(1)} km · {t.points.length} pts · {t.stops.length} stops
-              </div>
+
+          {/* Tab buttons */}
+          {tracks.length > 0 && (
+            <div className="hud-chip pointer-events-auto flex w-full items-center gap-1 p-1">
+              <button
+                onClick={() => setSideTab("summary")}
+                className={`flex-1 rounded py-1 font-display text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  sideTab === "summary" ? "bg-raised text-ink" : "text-muted hover:text-ink"
+                }`}
+              >
+                Summary
+              </button>
+              <button
+                onClick={() => setSideTab("trips")}
+                className={`flex-1 rounded py-1 font-display text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                  sideTab === "trips" ? "bg-raised text-accent" : "text-muted hover:text-ink"
+                }`}
+              >
+                Trips ({allTrips.length})
+              </button>
             </div>
-          ))}
+          )}
+
+          {sideTab === "summary" ? (
+            tracks.map((t) => (
+              <div key={t.personId} className="hud-chip pointer-events-auto w-full px-2.5 py-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: t.color }} />
+                  {t.name}
+                </div>
+                <div className="mt-0.5 font-mono text-[10px] text-muted">
+                  {t.km.toFixed(1)} km · {t.points.length} pts · {t.trips.length} trips · {t.stops.length} stops
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="pointer-events-auto max-h-[calc(100vh-280px)] w-full space-y-1.5 overflow-y-auto scroll-slim">
+              {allTrips.length === 0 && (
+                <div className="hud-chip px-2.5 py-1.5 font-mono text-[10px] text-muted">
+                  No distinct trips detected.
+                </div>
+              )}
+              {allTrips.map((tr) => (
+                <div
+                  key={`${tr.personId}-${tr.id}`}
+                  onClick={() => focusTrip(tr)}
+                  className={`hud-chip cursor-pointer w-full px-2.5 py-2 transition-colors hover:border-faint/80 ${
+                    selectedTripId === tr.id ? "border-accent bg-raised/90" : ""
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1 text-xs">
+                    <span className="font-semibold text-ink">Trip {tr.id} · {tr.personName}</span>
+                    <span className="font-mono text-[10px] font-medium text-accent">
+                      {tr.distanceKm} km
+                    </span>
+                  </div>
+                  <div className="mt-1 font-mono text-[10px] text-muted">
+                    {formatClock(tr.startTime)} – {formatClock(tr.endTime)} ({formatDuration(tr.durationMs)})
+                  </div>
+                  <div className="mt-1 flex items-center justify-between font-mono text-[9px] text-faint">
+                    <span>avg {tr.avgSpeedKmh} km/h</span>
+                    <span>max {tr.maxSpeedKmh} km/h</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -645,6 +830,11 @@ export function HistoryView() {
             formatClock(cursorMs)
           )}
         </span>
+        {currentCursorSpeed != null && (
+          <span className="shrink-0 rounded border border-accent/30 bg-accent/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-accent">
+            {currentCursorSpeed} km/h
+          </span>
+        )}
         <select
           value={speed}
           onChange={(e) => setSpeed(Number(e.target.value))}

@@ -248,3 +248,158 @@ export function generateGeoJson(
     features,
   };
 }
+
+export interface SpeedPoint extends TrackPoint {
+  speedKmh: number;
+}
+
+export interface TripSegment {
+  id: number;
+  personId: string;
+  startIndex: number;
+  endIndex: number;
+  startTime: number;
+  endTime: number;
+  durationMs: number;
+  distanceKm: number;
+  avgSpeedKmh: number;
+  maxSpeedKmh: number;
+  startAddress: string | null;
+  endAddress: string | null;
+  points: SpeedPoint[];
+}
+
+export function speedToColor(speedKmh: number): string {
+  if (speedKmh < 5) return "#64748b"; // stopped / drift (< 5 km/h) slate
+  if (speedKmh < 20) return "#22c55e"; // slow / walking / cycling (5 - 20 km/h) green
+  if (speedKmh < 45) return "#38bdf8"; // urban driving (20 - 45 km/h) sky blue
+  if (speedKmh < 70) return "#f59e0b"; // main road / arterial (45 - 70 km/h) amber
+  return "#ef4444"; // high speed / expressway (>= 70 km/h) red
+}
+
+export function calculatePointSpeeds(points: TrackPoint[]): SpeedPoint[] {
+  if (points.length === 0) return [];
+  if (points.length === 1) return [{ ...points[0], speedKmh: 0 }];
+
+  const rawSpeeds: number[] = [0];
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const dtSeconds = Math.max(1, (curr.t - prev.t) / 1000);
+    const distMeters = haversineMeters(prev.lat, prev.lng, curr.lat, curr.lng);
+    const speed = (distMeters / dtSeconds) * 3.6; // m/s to km/h
+    rawSpeeds.push(Math.min(180, Math.max(0, speed)));
+  }
+
+  // Smooth speeds with 3-point rolling average
+  return points.map((pt, idx) => {
+    let sum = rawSpeeds[idx];
+    let count = 1;
+    if (idx > 0) {
+      sum += rawSpeeds[idx - 1];
+      count++;
+    }
+    if (idx < rawSpeeds.length - 1) {
+      sum += rawSpeeds[idx + 1];
+      count++;
+    }
+    return {
+      ...pt,
+      speedKmh: Math.round((sum / count) * 10) / 10,
+    };
+  });
+}
+
+export function segmentTrips(
+  points: TrackPoint[],
+  personId: string,
+  minStopDurationMin = 10,
+  stopRadiusM = 75,
+): TripSegment[] {
+  if (points.length < 2) return [];
+  const speedPoints = calculatePointSpeeds(points);
+  const minStopMs = minStopDurationMin * 60_000;
+
+  // Identify stop intervals
+  const stopRanges: Array<{ startIdx: number; endIdx: number }> = [];
+  let anchorIdx = 0;
+  for (let i = 1; i < speedPoints.length; i++) {
+    const anchor = speedPoints[anchorIdx];
+    if (haversineMeters(anchor.lat, anchor.lng, speedPoints[i].lat, speedPoints[i].lng) <= stopRadiusM) {
+      continue;
+    }
+    const dur = speedPoints[i - 1].t - speedPoints[anchorIdx].t;
+    if (dur >= minStopMs && i - 1 > anchorIdx) {
+      stopRanges.push({ startIdx: anchorIdx, endIdx: i - 1 });
+    }
+    anchorIdx = i;
+  }
+  const lastDur = speedPoints[speedPoints.length - 1].t - speedPoints[anchorIdx].t;
+  if (lastDur >= minStopMs && speedPoints.length - 1 > anchorIdx) {
+    stopRanges.push({ startIdx: anchorIdx, endIdx: speedPoints.length - 1 });
+  }
+
+  // Any points between stops constitute a "Trip"
+  const trips: TripSegment[] = [];
+  let currentStart = 0;
+
+  for (const stop of stopRanges) {
+    if (stop.startIdx > currentStart) {
+      const tripPts = speedPoints.slice(currentStart, stop.startIdx + 1);
+      if (tripPts.length >= 2) {
+        trips.push(createTrip(trips.length + 1, personId, currentStart, stop.startIdx, tripPts));
+      }
+    }
+    currentStart = stop.endIdx;
+  }
+
+  // Trailing segment after last stop
+  if (currentStart < speedPoints.length - 1) {
+    const tripPts = speedPoints.slice(currentStart);
+    if (tripPts.length >= 2) {
+      trips.push(createTrip(trips.length + 1, personId, currentStart, speedPoints.length - 1, tripPts));
+    }
+  }
+
+  // If no stops at all, the whole trace is 1 trip
+  if (stopRanges.length === 0 && speedPoints.length >= 2) {
+    trips.push(createTrip(1, personId, 0, speedPoints.length - 1, speedPoints));
+  }
+
+  return trips;
+}
+
+function createTrip(
+  id: number,
+  personId: string,
+  startIndex: number,
+  endIndex: number,
+  points: SpeedPoint[],
+): TripSegment {
+  let distM = 0;
+  let maxSpeed = 0;
+  for (let i = 1; i < points.length; i++) {
+    distM += haversineMeters(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng);
+    if (points[i].speedKmh > maxSpeed) maxSpeed = points[i].speedKmh;
+  }
+  const durationMs = points[points.length - 1].t - points[0].t;
+  const distanceKm = Math.round((distM / 1000) * 100) / 100;
+  const hours = durationMs / 3_600_000;
+  const avgSpeedKmh = hours > 0 ? Math.round((distanceKm / hours) * 10) / 10 : 0;
+
+  return {
+    id,
+    personId,
+    startIndex,
+    endIndex,
+    startTime: points[0].t,
+    endTime: points[points.length - 1].t,
+    durationMs,
+    distanceKm,
+    avgSpeedKmh,
+    maxSpeedKmh: Math.round(maxSpeed * 10) / 10,
+    startAddress: points[0].address ?? null,
+    endAddress: points[points.length - 1].address ?? null,
+    points,
+  };
+}
