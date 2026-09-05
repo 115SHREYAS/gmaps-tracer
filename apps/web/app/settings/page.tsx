@@ -32,6 +32,16 @@ interface NotificationConfig {
   batteryThreshold: number;
 }
 
+interface ShareLinkRow {
+  id: string;
+  token: string;
+  personId: string;
+  personName: string;
+  label: string | null;
+  expiresAt: string | null;
+  isExpired: boolean;
+}
+
 export default function SettingsPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [notifConfig, setNotifConfig] = useState<NotificationConfig | null>(null);
@@ -41,6 +51,14 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [shareLinks, setShareLinks] = useState<ShareLinkRow[]>([]);
+  const [personsList, setPersonsList] = useState<Array<{ id: string; name: string }>>([]);
+  const [sharePersonId, setSharePersonId] = useState("");
+  const [shareLabel, setShareLabel] = useState("");
+  const [shareHours, setShareHours] = useState(24);
+  const [creatingShare, setCreatingShare] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -52,6 +70,19 @@ export default function SettingsPage() {
       const res = await fetch("/api/notifications/status", { cache: "no-store" });
       if (res.ok) setNotifConfig((await res.json()) as NotificationConfig);
     } catch {}
+
+    try {
+      const [shRes, pRes] = await Promise.all([
+        fetch("/api/share", { cache: "no-store" }),
+        fetch("/api/persons", { cache: "no-store" }),
+      ]);
+      if (shRes.ok) setShareLinks(await shRes.json());
+      if (pRes.ok) {
+        const p = await pRes.json();
+        setPersonsList(p);
+        if (p.length > 0) setSharePersonId((prev) => prev || p[0].id);
+      }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -59,6 +90,42 @@ export default function SettingsPage() {
     const id = setInterval(loadStatus, 30_000);
     return () => clearInterval(id);
   }, [loadStatus]);
+
+  async function createShare() {
+    if (!sharePersonId) return;
+    setCreatingShare(true);
+    try {
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personId: sharePersonId,
+          label: shareLabel.trim(),
+          durationHours: shareHours > 0 ? shareHours : null,
+        }),
+      });
+      if (res.ok) {
+        setShareLabel("");
+        const shRes = await fetch("/api/share", { cache: "no-store" });
+        if (shRes.ok) setShareLinks(await shRes.json());
+      }
+    } finally {
+      setCreatingShare(false);
+    }
+  }
+
+  async function deleteShare(id: string) {
+    await fetch(`/api/share?id=${id}`, { method: "DELETE" });
+    const shRes = await fetch("/api/share", { cache: "no-store" });
+    if (shRes.ok) setShareLinks(await shRes.json());
+  }
+
+  function copyShareUrl(token: string) {
+    const url = `${window.location.origin}/share/${token}`;
+    navigator.clipboard.writeText(url);
+    setCopiedToken(token);
+    setTimeout(() => setCopiedToken(null), 2000);
+  }
 
   async function sendTestAlert() {
     setTestingAlert(true);
@@ -316,6 +383,127 @@ export default function SettingsPage() {
               </span>
             )}
           </div>
+        </section>
+
+        {/* Public Share Links */}
+        <section className="rounded-xl border border-line bg-surface p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="eyebrow">Public Share Links</h2>
+              <p className="mt-1 text-xs text-muted">
+                Create temporary, secure read-only tracking links to share a person's live location.
+              </p>
+            </div>
+            <span className="rounded border border-line bg-raised px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-faint">
+              {shareLinks.length} Active
+            </span>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-line bg-raised p-4">
+            <h3 className="eyebrow mb-3">Generate new link</h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-faint">
+                  Person
+                </label>
+                <select
+                  value={sharePersonId}
+                  onChange={(e) => setSharePersonId(e.target.value)}
+                  className="w-full rounded-md border border-line bg-surface px-3 py-2 text-xs text-ink outline-none focus:border-accent"
+                >
+                  {personsList.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                  {personsList.length === 0 && <option value="">No people found</option>}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-faint">
+                  Label (optional)
+                </label>
+                <input
+                  type="text"
+                  value={shareLabel}
+                  onChange={(e) => setShareLabel(e.target.value)}
+                  placeholder="e.g. Trip to airport"
+                  className="w-full rounded-md border border-line bg-surface px-3 py-2 text-xs text-ink placeholder-faint outline-none focus:border-accent"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block font-mono text-[10px] uppercase tracking-wider text-faint">
+                  Duration
+                </label>
+                <select
+                  value={shareHours}
+                  onChange={(e) => setShareHours(Number(e.target.value))}
+                  className="w-full rounded-md border border-line bg-surface px-3 py-2 text-xs text-ink outline-none focus:border-accent"
+                >
+                  <option value={1}>1 hour</option>
+                  <option value={6}>6 hours</option>
+                  <option value={24}>24 hours</option>
+                  <option value={168}>7 days</option>
+                  <option value={0}>No expiration</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={createShare}
+                disabled={creatingShare || !sharePersonId}
+                className="rounded-md bg-accent px-4 py-2 font-display text-xs font-semibold uppercase tracking-[0.12em] text-bg transition-[filter,opacity] hover:brightness-110 disabled:opacity-40"
+              >
+                {creatingShare ? "Generating…" : "Create share link"}
+              </button>
+            </div>
+          </div>
+
+          {shareLinks.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <h3 className="eyebrow mb-2">Active links</h3>
+              {shareLinks.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex flex-col gap-2 rounded-lg border border-line bg-raised p-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-ink">{s.personName}</span>
+                      {s.label && (
+                        <span className="rounded bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted">
+                          {s.label}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 font-mono text-[11px] text-faint">
+                      {s.expiresAt
+                        ? `Expires: ${formatDateTime(new Date(s.expiresAt).getTime())}`
+                        : "Never expires"}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => copyShareUrl(s.token)}
+                      className="rounded border border-line bg-surface px-2.5 py-1 font-mono text-xs text-ink transition-colors hover:border-accent hover:text-accent"
+                    >
+                      {copiedToken === s.token ? "Copied!" : "Copy Link"}
+                    </button>
+                    <button
+                      onClick={() => deleteShare(s.id)}
+                      className="rounded border border-danger/30 bg-danger/10 px-2.5 py-1 font-mono text-xs text-danger transition-colors hover:bg-danger/20"
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Cookies upload */}

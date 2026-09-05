@@ -1,0 +1,18 @@
+{
+  "name": "GPS Location Tracer",
+  "short_name": "GPSTracer",
+  "description": "Self-hosted live location tracker and historical timeline",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a0e16",
+  "theme_color": "#0a0e16",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -64,12 +64,28 @@ export const alertState = pgTable("alert_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const shareTokens = pgTable("share_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  token: text("token").notNull().unique(),
+  personId: uuid("person_id")
+    .notNull()
+    .references(() => persons.id, { onDelete: "cascade" }),
+  label: text("label"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const personsRelations = relations(persons, ({ many }) => ({
   locations: many(locations),
+  shareTokens: many(shareTokens),
 }));
 
 export const locationsRelations = relations(locations, ({ one }) => ({
   person: one(persons, { fields: [locations.personId], references: [persons.id] }),
+}));
+
+export const shareTokensRelations = relations(shareTokens, ({ one }) => ({
+  person: one(persons, { fields: [shareTokens.personId], references: [persons.id] }),
 }));
 
 export type Person = typeof persons.$inferSelect;
@@ -77,3 +93,5 @@ export type LocationPoint = typeof locations.$inferSelect;
 export type SyncState = typeof syncState.$inferSelect;
 export type SyncLogEntry = typeof syncLog.$inferSelect;
 export type AlertState = typeof alertState.$inferSelect;
+export type ShareToken = typeof shareTokens.$inferSelect;
+export type NewShareToken = typeof shareTokens.$inferInsert;

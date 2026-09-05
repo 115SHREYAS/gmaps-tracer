@@ -15,6 +15,13 @@
       "when": 1788369542342,
       "tag": "0001_daffy_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788616801604,
+      "tag": "0002_lean_ultragirl",
+      "breakpoints": true
     }
   ]
 }
