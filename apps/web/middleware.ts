@@ -6,7 +6,7 @@ const PUBLIC_PATHS = new Set(["/login", "/api/auth/login", "/api/health"]);
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (PUBLIC_PATHS.has(pathname)) return NextResponse.next();
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/ingest/")) return NextResponse.next();
 
   const res = NextResponse.next();
   try {
