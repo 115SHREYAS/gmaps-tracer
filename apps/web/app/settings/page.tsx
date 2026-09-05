@@ -318,6 +318,51 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* Location Ingestion */}
+        <section className="rounded-xl border border-line bg-surface p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="eyebrow">HTTP Location Ingestion</h2>
+              <p className="mt-1 text-xs text-muted">
+                Accept direct location updates from mobile devices running <strong>OwnTracks</strong>, Home Assistant, GPS Logger, or custom webhooks.
+              </p>
+            </div>
+            <span className="rounded border border-ok/40 bg-ok/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-ok">
+              active
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3 font-mono text-xs">
+            <div className="rounded-lg border border-line bg-raised p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-ink font-semibold">OwnTracks Endpoint</span>
+                <span className="text-[10px] text-faint">POST (JSON)</span>
+              </div>
+              <p className="mt-1.5 break-all text-accent select-all">
+                /api/ingest/owntracks
+              </p>
+              <p className="mt-1 text-[11px] text-muted">
+                Configure in OwnTracks mobile app: Mode = HTTP, URL = https://your-domain/api/ingest/owntracks (optional ?token=YOUR_TOKEN)
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-line bg-raised p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-ink font-semibold">Generic Webhook Endpoint</span>
+                <span className="text-[10px] text-faint">POST (JSON)</span>
+              </div>
+              <p className="mt-1.5 break-all text-accent select-all">
+                /api/ingest/generic
+              </p>
+              <pre className="mt-2 overflow-x-auto rounded bg-surface p-2 text-[10px] text-muted">
+{`curl -X POST https://your-domain/api/ingest/generic \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Alex","lat":12.9716,"lng":77.5946,"battery":85}'`}
+              </pre>
+            </div>
+          </div>
+        </section>
+
         {/* Cookies upload */}
         <section className="rounded-xl border border-line bg-surface p-5">
           <h2 className="eyebrow">Google session cookies</h2>
