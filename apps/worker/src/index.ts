@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { writeFileSync } from "node:fs";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { db, pool } from "@app/db";
 import { findMigrationsDir } from "./paths";
@@ -6,11 +7,17 @@ import { pruneOldLogs, runSyncOnce } from "./sync";
 
 const intervalSec = Math.max(30, Number(process.env.POLL_INTERVAL_SECONDS ?? 300));
 const jitterMs = 20_000;
+const healthFile = "/tmp/gmaps-tracer-worker-health";
+
+function reportHealthy() {
+  writeFileSync(healthFile, String(Date.now()));
+}
 
 async function main() {
   console.log(`[worker] starting (poll every ${intervalSec}s)`);
   await migrate(db, { migrationsFolder: findMigrationsDir() });
   console.log("[worker] migrations ready");
+  reportHealthy();
 
   const tick = async () => {
     await runSyncOnce();
@@ -22,6 +29,7 @@ async function main() {
   }, 5_000).unref();
 
   setInterval(() => {
+    reportHealthy();
     setTimeout(() => {
       tick().catch((err) => console.error("[worker] tick failed", err));
     }, Math.floor(Math.random() * jitterMs)).unref();
